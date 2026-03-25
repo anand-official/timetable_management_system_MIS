@@ -1,0 +1,229 @@
+section,subject,periodsPerWeek
+IX A,2nd Language,2
+IX A,3rd Language,1
+IX A,Biology,1
+IX A,Chemistry,2
+IX A,Computer Science,3
+IX A,English,5
+IX A,Games,3
+IX A,Innovation,1
+IX A,Library,1
+IX A,Mathematics,2
+IX A,Physics,1
+IX A,Social Studies,2
+IX A,Work Experience,2
+IX B,2nd Language,2
+IX B,3rd Language,1
+IX B,Biology,1
+IX B,Chemistry,2
+IX B,Computer Science,3
+IX B,English,5
+IX B,Games,3
+IX B,Innovation,1
+IX B,Library,1
+IX B,Mathematics,2
+IX B,Physics,1
+IX B,Social Studies,2
+IX B,Work Experience,2
+IX C,2nd Language,2
+IX C,3rd Language,1
+IX C,Biology,1
+IX C,Chemistry,2
+IX C,Computer Science,3
+IX C,English,5
+IX C,Games,3
+IX C,Innovation,1
+IX C,Library,1
+IX C,Mathematics,2
+IX C,Physics,1
+IX C,Social Studies,2
+IX C,Work Experience,2
+IX D,2nd Language,2
+IX D,3rd Language,1
+IX D,Biology,1
+IX D,Chemistry,2
+IX D,Computer Science,3
+IX D,English,5
+IX D,Games,3
+IX D,Innovation,1
+IX D,Library,1
+IX D,Mathematics,2
+IX D,Physics,1
+IX D,Social Studies,2
+IX D,Work Experience,2
+VI A,2nd Language,2
+VI A,3rd Language,1
+VI A,Aerobics,1
+VI A,Computer Science,2
+VI A,English,3
+VI A,Games,3
+VI A,Innovation,1
+VI A,Library,1
+VI A,Mathematics,4
+VI A,Science,4
+VI A,Social Studies,3
+VI A,Work Experience,1
+VI A,Yoga,1
+VI B,2nd Language,2
+VI B,3rd Language,1
+VI B,Aerobics,1
+VI B,Computer Science,2
+VI B,English,3
+VI B,Games,3
+VI B,Innovation,1
+VI B,Library,1
+VI B,Mathematics,4
+VI B,Science,4
+VI B,Social Studies,3
+VI B,Work Experience,1
+VI B,Yoga,1
+VI C,2nd Language,2
+VI C,3rd Language,1
+VI C,Aerobics,1
+VI C,Computer Science,2
+VI C,English,3
+VI C,Games,3
+VI C,Innovation,1
+VI C,Library,1
+VI C,Mathematics,4
+VI C,Science,4
+VI C,Social Studies,3
+VI C,Work Experience,1
+VI C,Yoga,1
+VI D,2nd Language,2
+VI D,3rd Language,1
+VI D,Aerobics,1
+VI D,Computer Science,2
+VI D,English,3
+VI D,Games,3
+VI D,Innovation,1
+VI D,Library,1
+VI D,Mathematics,4
+VI D,Science,4
+VI D,Social Studies,3
+VI D,Work Experience,1
+VI D,Yoga,1
+VII A,2nd Language,2
+VII A,3rd Language,3
+VII A,Aerobics,1
+VII A,Chemistry,1
+VII A,Computer Science,3
+VII A,English,7
+VII A,Games,4
+VII A,Innovation,1
+VII A,Library,1
+VII A,Mathematics,3
+VII A,Science,3
+VII A,Social Studies,2
+VII A,Work Experience,2
+VII A,Yoga,1
+VII B,2nd Language,2
+VII B,3rd Language,3
+VII B,Aerobics,1
+VII B,Chemistry,1
+VII B,Computer Science,3
+VII B,English,7
+VII B,Games,4
+VII B,Innovation,1
+VII B,Library,1
+VII B,Mathematics,3
+VII B,Science,3
+VII B,Social Studies,2
+VII B,Work Experience,2
+VII B,Yoga,1
+VII C,2nd Language,2
+VII C,3rd Language,3
+VII C,Aerobics,1
+VII C,Chemistry,1
+VII C,Computer Science,3
+VII C,English,7
+VII C,Games,4
+VII C,Innovation,1
+VII C,Library,1
+VII C,Mathematics,3
+VII C,Science,3
+VII C,Social Studies,2
+VII C,Work Experience,2
+VII C,Yoga,1
+VII D,2nd Language,2
+VII D,3rd Language,3
+VII D,Aerobics,1
+VII D,Chemistry,1
+VII D,Computer Science,3
+VII D,English,7
+VII D,Games,4
+VII D,Innovation,1
+VII D,Library,1
+VII D,Mathematics,3
+VII D,Science,3
+VII D,Social Studies,2
+VII D,Work Experience,2
+VII D,Yoga,1
+X A,2nd Language,3
+X A,3rd Language,1
+X A,Accountancy,3
+X A,Biology,5
+X A,Chemistry,3
+X A,Computer Science,3
+X A,Economics,4
+X A,English,4
+X A,Games,4
+X A,Geography,2
+X A,Home Science,3
+X A,Innovation,1
+X A,Library,1
+X A,Mathematics,4
+X A,Maths/Chem/Home Sci,4
+X A,Physics,4
+X A,Work Experience,1
+X B,2nd Language,3
+X B,3rd Language,1
+X B,Accountancy,3
+X B,Biology,5
+X B,Chemistry,3
+X B,Computer Science,3
+X B,Economics,4
+X B,English,4
+X B,Games,4
+X B,Geography,2
+X B,Home Science,3
+X B,Innovation,1
+X B,Library,1
+X B,Mathematics,4
+X B,Maths/Chem/Home Sci,4
+X B,Physics,4
+X B,Work Experience,1
+X C,2nd Language,3
+X C,3rd Language,1
+X C,Accountancy,3
+X C,Biology,5
+X C,Chemistry,3
+X C,Computer Science,3
+X C,Economics,4
+X C,English,4
+X C,Games,4
+X C,Geography,2
+X C,Home Science,3
+X C,Innovation,1
+X C,Library,1
+X C,Mathematics,4
+X C,Maths/Chem/Home Sci,4
+X C,Physics,4
+X C,Work Experience,1
+X D,2nd Language,3
+X D,3rd Language,1
+X D,Accountancy,3
+X D,Biology,5
+X D,Chemistry,3
+X D,Computer Science,3
+X D,Economics,4
+X D,English,4
+X D,Games,4
+X D,Geography,2
+X D,Home Science,3
+X D,Innovation,1
+X D,Library,1
+X D,Mathematics,4
+X D,Maths/Chem/Home Sci,4
+X D,Physics,4
+X D,Work Experience,1

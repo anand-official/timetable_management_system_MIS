@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Grade {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  level     String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sections  Section[]
+}
+
+model Section {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  gradeId         String
+  classTeacherId  String?
+  coordinatorId   String?
+  stream          String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  coordinator     Teacher?         @relation("Coordinator", fields: [coordinatorId], references: [id])
+  classTeacher    Teacher?         @relation("ClassTeacher", fields: [classTeacherId], references: [id])
+  grade           Grade            @relation(fields: [gradeId], references: [id])
+  teacherSubjects TeacherSubject[]
+  timetableSlots  TimetableSlot[]
+}
+
+model Subject {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  code            String           @unique
+  category        String
+  requiresLab     Boolean          @default(false)
+  isDoublePeriod  Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  teacherSubjects TeacherSubject[]
+  timetableSlots  TimetableSlot[]
+  rooms           SubjectRoom[]
+}
+
+model Teacher {
+  id              String               @id @default(cuid())
+  name            String
+  abbreviation    String               @unique
+  department      String
+  isHOD           Boolean              @default(false)
+  targetWorkload  Int                  @default(0)
+  currentWorkload Int                  @default(0)
+  isActive        Boolean              @default(true)
+  teachableGrades String               @default("[]")
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  coordinatorFor  Section[]            @relation("Coordinator")
+  teacherSections Section[]            @relation("ClassTeacher")
+  teacherSubjects TeacherSubject[]
+  timetableSlots  TimetableSlot[]
+  validations     WorkloadValidation[]
+  unavailabilities TeacherUnavailability[]
+  absences        TeacherAbsence[]
+}
+
+model TeacherSubject {
+  id              String   @id @default(cuid())
+  teacherId       String
+  subjectId       String
+  sectionId       String
+  periodsPerWeek  Int      @default(0)
+  isLabAssignment Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  section         Section  @relation(fields: [sectionId], references: [id])
+  subject         Subject  @relation(fields: [subjectId], references: [id])
+  teacher         Teacher  @relation(fields: [teacherId], references: [id])
+
+  @@unique([teacherId, subjectId, sectionId])
+}
+
+model TimeSlot {
+  id             String          @id @default(cuid())
+  periodNumber   Int             @unique
+  startTime      String
+  endTime        String
+  duration       Int
+  slotType       String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  timetableSlots TimetableSlot[]
+  unavailabilities TeacherUnavailability[]
+}
+
+model Day {
+  id             String          @id @default(cuid())
+  name           String          @unique
+  dayOrder       Int             @unique
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  timetableSlots TimetableSlot[]
+  unavailabilities TeacherUnavailability[]
+}
+
+model TeacherUnavailability {
+  id         String   @id @default(cuid())
+  teacherId  String
+  teacher    Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  dayId      String
+  day        Day      @relation(fields: [dayId], references: [id])
+  timeSlotId String
+  timeSlot   TimeSlot @relation(fields: [timeSlotId], references: [id])
+  reason     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([teacherId, dayId, timeSlotId])
+}
+
+model TimetableSlot {
+  id           String   @id @default(cuid())
+  sectionId    String
+  dayId        String
+  timeSlotId   String
+  subjectId    String?
+  teacherId    String?
+  roomId       String?
+  isLab        Boolean  @default(false)
+  isInnovation Boolean  @default(false)
+  isGames      Boolean  @default(false)
+  isYoga       Boolean  @default(false)
+  isLibrary    Boolean  @default(false)
+  isWE         Boolean  @default(false)
+  isMusic      Boolean  @default(false)
+  isArt        Boolean  @default(false)
+  isFiller     Boolean  @default(false)
+  manuallyEdited Boolean @default(false)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  teacher      Teacher? @relation(fields: [teacherId], references: [id])
+  room         Room?    @relation(fields: [roomId], references: [id])
+  subject      Subject? @relation(fields: [subjectId], references: [id])
+  timeSlot     TimeSlot @relation(fields: [timeSlotId], references: [id])
+  day          Day      @relation(fields: [dayId], references: [id])
+  section      Section  @relation(fields: [sectionId], references: [id])
+
+  @@unique([sectionId, dayId, timeSlotId])
+}
+
+model Room {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  subjects  SubjectRoom[]
+  grades    Json?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  timetableSlots TimetableSlot[]
+}
+
+model SubjectRoom {
+  id        String   @id @default(cuid())
+  subjectId String
+  roomId    String
+  subject   Subject  @relation(fields: [subjectId], references: [id])
+  room      Room     @relation(fields: [roomId], references: [id])
+
+  @@unique([subjectId, roomId])
+}
+
+model SchoolConfig {
+  id                 String   @id @default(cuid())
+  schoolName         String   @default("Modern Indian School")
+  academicYear       String   @default("2025-26")
+  seniorStartTime    String   @default("7:35")
+  seniorEndTime      String   @default("13:45")
+  juniorStartTime    String   @default("9:15")
+  juniorEndTime      String   @default("15:10")
+  totalPeriodsSenior Int      @default(8)
+  totalPeriodsJunior Int      @default(8)
+  workingDays        Int      @default(6)
+  fillEmptySlots     Boolean  @default(true)
+  allowDuplicateActivities Boolean @default(true)
+  studyPeriodTeacherPool String @default("[]")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model ScoringWeights {
+  id                           String   @id @default(cuid())
+  name                         String   @unique @default("default")
+  subjectPreferenceWeight      Float    @default(2.0)
+  teacherDailyLoadWeight       Float    @default(1.5)
+  sectionDailyLoadWeight       Float    @default(1.0)
+  subjectSpreadWeight          Float    @default(1.5)
+  teacherAdjacencyPenaltyWeight Float   @default(1.2)
+  labLastPeriodPenaltyWeight   Float    @default(1.0)
+  classTeacherBonusWeight      Float    @default(0.8)
+  roomAvailabilityWeight       Float    @default(1.0)
+  labPlacementWeight           Float    @default(2.0)
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
+}
+
+model ImportHistory {
+  id               String   @id @default(cuid())
+  fileName         String
+  fileType         String
+  importType       String
+  status           String
+  recordsProcessed Int      @default(0)
+  errors           String?
+  createdAt        DateTime @default(now())
+}
+
+model WorkloadValidation {
+  id             String   @id @default(cuid())
+  teacherId      String
+  targetWorkload Int
+  actualWorkload Int
+  difference     Int
+  status         String
+  warnings       String?
+  validatedAt    DateTime @default(now())
+  teacher        Teacher  @relation(fields: [teacherId], references: [id])
+}
+
+model TeacherAbsence {
+  id        String   @id @default(cuid())
+  teacherId String
+  teacher   Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  date      DateTime
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, date])
+}

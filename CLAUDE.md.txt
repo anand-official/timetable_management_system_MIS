@@ -1,0 +1,408 @@
+# Timetable Management System — CLAUDE.md
+
+## Project Overview
+
+Build a full-stack Timetable Management System for **Modern Indian School** that automatically generates conflict-free timetables using real 2025–26 academic data.
+
+The system must:
+
+* Accept Excel input with teacher-subject-class assignments
+* Generate conflict-free timetables for **40 sections**
+* Validate teacher workloads
+* Export timetables as **Excel (.xlsx) and PDF**
+* Provide an interactive dashboard to view schedules by class or teacher
+* Use **Gemini free API** for AI-assisted optimization
+* Pre-populate database using the provided real dataset
+* Provide deterministic results (avoid random scheduling instability)
+
+Seed data and schema reference is provided in the uploaded file:
+
+
+---
+
+# School Structure
+
+## Academic Calendar
+
+* 6-day week (Sunday–Friday)
+
+## Sections (40 total)
+
+VI A–E
+VII A–F
+VIII A–F
+IX A–F
+X A–E
+XI A–F
+XII A–F
+
+---
+
+# School Timings
+
+## Senior School
+
+Reporting: 7:35
+Assembly: 7:45–8:00
+
+| Period | Time        | Duration |
+| ------ | ----------- | -------- |
+| P1     | 8:05–8:40   | 35m      |
+| P2     | 8:40–9:15   | 35m      |
+| Break  | 9:15–9:30   | 15m      |
+| P3     | 9:30–10:10  | 40m      |
+| P4     | 10:10–10:50 | 40m      |
+| P5     | 10:50–11:30 | 40m      |
+| Lunch  | 11:30–12:00 | 30m      |
+| P6     | 12:00–12:35 | 35m      |
+| P7     | 12:35–1:10  | 35m      |
+| P8     | 1:10–1:45   | 35m      |
+
+---
+
+## Junior School
+
+Reporting: 9:15
+
+| Period | Time        |
+| ------ | ----------- |
+| P1     | 9:30–10:10  |
+| P2     | 10:10–10:50 |
+| P3     | 10:50–11:30 |
+| Lunch  | 11:30–12:00 |
+| P4     | 12:00–12:35 |
+| P5     | 12:35–1:10  |
+| P6     | 1:10–1:45   |
+| P7     | 1:45–2:20   |
+| P8     | 2:20–3:00   |
+
+---
+
+# Core Functional Requirements
+
+## 1. Data Import
+
+Accept Excel file containing:
+
+* teacher_name
+* subject
+* class
+* section
+* weekly_periods
+* lab_requirements
+* workload target
+
+Use uploaded dataset as schema reference.
+
+---
+
+## 2. Timetable Generation Requirements
+
+### Must satisfy constraints:
+
+### Teacher Constraints
+
+* A teacher cannot be assigned to two classes in the same period
+* Teacher weekly workload must match target workload
+* HOD workload should be lighter (18–22 periods)
+* Max 6 periods per day per teacher
+* Preferred: class teacher teaches own class
+
+### Lab Constraints
+
+Lab sessions must:
+
+* always be double periods
+* be consecutive
+* assigned correct lab teacher
+* support group rotations:
+
+  * P/C
+  * P/B
+  * B/C
+
+### Innovation Period
+
+* exactly 1 period per week per class
+* assigned to innovation incharge for grade
+
+### Special Subjects Rotation
+
+Subjects must rotate fairly:
+
+* Games
+* Library
+* Work Experience
+* Yoga
+* Aerobics
+* Music
+* Art
+
+### Language Slots
+
+VI–VIII require:
+
+* 2nd language slot
+* 3rd language slot
+
+### Daily Distribution Constraints
+
+Avoid:
+
+* same subject > 2 consecutive periods
+* teacher with >6 periods/day
+* uneven weekly subject clustering
+
+---
+
+## 3. AI Optimization (Gemini API)
+
+Use Gemini API for:
+
+* workload imbalance detection
+* timetable optimization suggestions
+* conflict identification
+* distribution improvements
+
+Model:
+gemini-2.0-flash
+
+Fallback:
+Local heuristic optimization when API quota exceeded.
+
+---
+
+# Database Schema Requirements
+
+Entities:
+
+Teacher
+
+* id
+* name
+* abbreviation
+* department
+* isHOD
+* targetWorkload
+
+Class
+
+* id
+* grade
+* section
+
+Subject
+
+* id
+* name
+* abbreviation
+* requiresLab
+
+TeacherSubject
+
+* teacherId
+* subjectId
+* classId
+* weeklyPeriods
+
+TimetableSlot
+
+* classId
+* teacherId
+* subjectId
+* day
+* period
+* isLab
+* isDoublePeriod
+* isInnovation
+* isGames
+* isLibrary
+* isMusic
+* isArt
+
+---
+
+# Algorithm Requirements
+
+Use deterministic algorithm (NOT random shuffle)
+
+### Suggested approach:
+
+Phase 1 — Hard constraints
+
+* place labs
+* place innovation periods
+* assign class teacher subjects
+* assign fixed subjects
+
+Phase 2 — Core subjects
+Distribute:
+
+* Math
+* English
+* Science
+* Social Studies
+
+Ensure spread across week
+
+Phase 3 — Remaining subjects
+Fill remaining slots while:
+
+* balancing workloads
+* avoiding teacher conflicts
+
+Phase 4 — Optimization pass
+Adjust:
+
+* uneven teacher loads
+* subject clustering
+* daily overloads
+
+---
+
+# Dashboard Requirements
+
+## Tabs
+
+### Dashboard
+
+* stats overview
+* generate timetable button
+
+### Class View
+
+* weekly grid timetable
+
+### Teacher View
+
+* teacher weekly schedule
+
+### Manage Teachers
+
+CRUD operations:
+
+* add teacher
+* edit teacher
+* delete teacher
+* search teacher
+* filter by department
+
+### Workload View
+
+Show:
+
+* current workload
+* target workload
+* imbalance alerts
+
+### AI Assistant
+
+Buttons:
+
+* analyze
+* optimize
+* suggest improvements
+
+---
+
+# Export Requirements
+
+## Excel export
+
+.xlsx format using openpyxl
+
+## PDF export
+
+PDF timetable per class using reportlab
+
+---
+
+# Known Pitfalls to Avoid
+
+## Scheduling Issues
+
+Avoid:
+
+* teacher double booking
+* missing lab double periods
+* uneven distribution of subjects
+* incomplete timetables
+* empty teacher workloads
+* class teacher not teaching own class
+
+## Data Issues
+
+Ensure:
+
+* all teachers mapped to subjects
+* no orphan subjects
+* no unused teachers
+* consistent abbreviations
+
+## Algorithm Issues
+
+Avoid:
+
+* random scheduling
+* infinite loops
+* race conditions in DB insert
+* duplicate slot insertion
+
+---
+
+# Expected Output Metrics
+
+Target:
+
+40/40 sections complete
+100% timetable fill rate
+0 teacher conflicts
+0 empty teacher workload
+balanced teacher loads
+correct lab allocation
+
+Expected slots:
+1920 total timetable slots
+
+---
+
+# Tech Stack
+
+Next.js
+TypeScript
+Prisma ORM
+SQLite or PostgreSQL
+Gemini API
+Tailwind UI
+shadcn components
+
+---
+
+# Priority Goals
+
+1. Accuracy > speed
+2. Deterministic generation
+3. Easily editable schedules
+4. clear validation errors
+5. production stability
+
+---
+
+# Instruction to Claude
+
+Use the uploaded dataset as ground truth schema reference.
+
+Generate:
+
+* schema
+* seed data loader
+* scheduling algorithm
+* API routes
+* UI dashboard
+* export modules
+
+Ensure no logical conflicts.
+Ensure production-ready structure.
+Ensure extensible design.
+
+Do not hallucinate missing fields — infer from dataset.

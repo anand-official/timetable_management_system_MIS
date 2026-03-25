@@ -535,9 +535,23 @@ export default function TimetableManagementSystem() {
             timeSlotId: row.timeSlotId,
           };
         }
+        const preview = row.preview as PreviewSlotPayload;
         return {
           type: row.type,
-          ...(row.preview as PreviewSlotPayload),
+          subjectId: preview.subjectId,
+          teacherId: preview.teacherId,
+          roomId: preview.roomId ?? null,
+          isLab: preview.isLab,
+          isGames: preview.isGames,
+          isYoga: preview.isYoga,
+          isLibrary: preview.isLibrary,
+          isInnovation: preview.isInnovation,
+          isWE: preview.isWE,
+          isMusic: preview.isMusic,
+          isArt: preview.isArt,
+          sectionId: row.sectionId,
+          dayId: row.dayId,
+          timeSlotId: row.timeSlotId,
         };
       });
       const response = await fetch('/api/generate/apply-preview', {

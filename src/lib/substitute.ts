@@ -47,10 +47,14 @@ export async function suggestSubstitutes(teacherId: string, dateInput: string | 
   }
 
   const daySlots = await db.timetableSlot.findMany({
-    where: { dayId: day.id, teacherId: { not: null } },
+    where: { dayId: day.id },
     select: { teacherId: true, timeSlotId: true },
   });
-  const teacherBusy = new Set(daySlots.map(s => `${s.teacherId}|${s.timeSlotId}`));
+  const teacherBusy = new Set(
+    daySlots
+      .filter((s): s is { teacherId: string; timeSlotId: string } => Boolean(s.teacherId))
+      .map(s => `${s.teacherId}|${s.timeSlotId}`)
+  );
 
   const absencesToday = await db.teacherAbsence.findMany({
     where: { date },

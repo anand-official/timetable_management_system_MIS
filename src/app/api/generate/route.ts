@@ -350,9 +350,14 @@ export async function POST(request: NextRequest) {
               getAllowedLabRooms,
             },
           });
+          const bestDayId = bestSlot?.dayId;
+          const currentBestDayOrder = bestDayId
+            ? (candidateDays.find(d => d.id === bestDayId)?.dayOrder ?? Number.POSITIVE_INFINITY)
+            : Number.POSITIVE_INFINITY;
+
           if (
             score > bestScore ||
-            (score === bestScore && bestSlot && day.dayOrder < (candidateDays.find(d => d.id === bestSlot?.dayId)?.dayOrder ?? 999))
+            (score === bestScore && day.dayOrder < currentBestDayOrder)
           ) {
             bestScore = score;
             bestSlot = { dayId: day.id, slot: ts };
@@ -450,7 +455,10 @@ export async function POST(request: NextRequest) {
                 isAvailable(teacherId, sectionId, day.id, occupied.id, subjectId, true) &&
                 isAvailable(teacherId, sectionId, day.id, partner.id, subjectId, true)
               ) {
-                return { dayId: day.id, pair: [occupied, partner].sort((x, y) => x.periodNumber - y.periodNumber) as unknown as [SlimSlot, SlimSlot] };
+                const orderedPair: [SlimSlot, SlimSlot] = occupied.periodNumber <= partner.periodNumber
+                  ? [occupied, partner]
+                  : [partner, occupied];
+                return { dayId: day.id, pair: orderedPair };
               }
             }
           }

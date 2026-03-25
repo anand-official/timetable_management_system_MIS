@@ -68,7 +68,6 @@ export function cellColorArgb(cell: CellData): string {
 }
 
 // ── Slot shape returned by Prisma include ─────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RawSlot = any;
 
 function makeCell(slot: RawSlot, line2: string): CellData {

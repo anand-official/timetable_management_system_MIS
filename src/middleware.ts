@@ -9,13 +9,53 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
 };
 
-// ── Middleware ─────────────────────────────────────────────────────────────────
+const AUTH_COOKIE_NAME = 'mis-access';
+const PUBLIC_PATH_PREFIXES = ['/auth', '/api/auth'];
 
-export function middleware(_request: NextRequest) {
-  const response = NextResponse.next();
+function applySecurityHeaders(response: NextResponse) {
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     response.headers.set(key, value);
   }
+}
+
+function isPublicPath(pathname: string) {
+  return PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+// ── Middleware ─────────────────────────────────────────────────────────────────
+
+export function middleware(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+
+  if (isPublicPath(pathname)) {
+    const response = NextResponse.next();
+    applySecurityHeaders(response);
+    return response;
+  }
+
+  const hasValidSession = request.cookies.get(AUTH_COOKIE_NAME)?.value === 'granted';
+  if (!hasValidSession) {
+    if (pathname.startsWith('/api/')) {
+      const unauthorizedResponse = NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      applySecurityHeaders(unauthorizedResponse);
+      return unauthorizedResponse;
+    }
+
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = '/auth';
+    redirectUrl.search = '';
+
+    if (pathname !== '/') {
+      redirectUrl.searchParams.set('next', `${pathname}${search}`);
+    }
+
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    applySecurityHeaders(redirectResponse);
+    return redirectResponse;
+  }
+
+  const response = NextResponse.next();
+  applySecurityHeaders(response);
   return response;
 }
 

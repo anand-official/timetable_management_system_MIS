@@ -7,6 +7,15 @@ import { getExplicitLabTeacherCandidates } from '@/lib/lab-teacher-support';
 import { sortSectionsByGradeThenName } from '@/lib/section-sort';
 import { isLabDepartment } from '@/lib/teacher-departments';
 import { teacherCanCoverSubject } from '@/lib/teacher-eligibility';
+import {
+  type CombinedSlotBucket,
+  type CombinedSlotMetadata,
+  type CombinedSlotOption,
+  type CombinedSlotSharingMode,
+  encodeCombinedSlotMetadata,
+  getAllSlotTeacherIds,
+  parseCombinedSlotMetadata,
+} from '@/lib/combined-slot';
 
 export const maxDuration = 60; // seconds — Vercel hobby max
 
@@ -43,6 +52,7 @@ type SlotRecord = {
   teacherId: string;
   labTeacherId?: string | null;
   roomId?: string | null;
+  notes?: string | null;
   isLab: boolean;
   isGames: boolean;
   isYoga: boolean;
@@ -66,6 +76,25 @@ type ScoringWeightsConfig = {
   labPlacementWeight: number;
 };
 
+type LanguageBlockOption = CombinedSlotOption;
+
+type LanguageBlockSpec = {
+  bucket: CombinedSlotBucket;
+  grade: string;
+  sectionId: string;
+  sectionName: string;
+  periodsPerWeek: number;
+  displayName: string;
+  displayCode: string;
+  representativeSubjectId: string;
+  options: LanguageBlockOption[];
+};
+
+type LanguageSharingRule = {
+  mode: CombinedSlotSharingMode;
+  groupLimit?: number;
+};
+
 // ─── Subject classification constants ─────────────────────────────────────────
 
 // W.E. (Work Experience) subjects — Music, Dance, Art students choose one per term.
@@ -83,6 +112,32 @@ const SHARED_SLOT_SUBJECTS = new Set(['Games', 'Yoga', 'Aerobics', 'Innovation',
 const GROUPED_SECTION_SUBJECT_LIMITS = new Map<string, number>([
   ['Hindi', 3],
 ]);
+
+const LANGUAGE_BUCKET_CONFIG: Record<
+  CombinedSlotBucket,
+  {
+    subjectNames: string[];
+    getSharingRule: (subjectName: string) => LanguageSharingRule;
+  }
+> = {
+  '2nd Language': {
+    subjectNames: ['Hindi', 'Nepali'],
+    getSharingRule: (subjectName) =>
+      subjectName === 'Hindi'
+        ? { mode: 'grouped', groupLimit: 3 }
+        : { mode: 'single' },
+  },
+  '3rd Language': {
+    subjectNames: ['Hindi', 'Nepali', 'French'],
+    getSharingRule: (subjectName) => {
+      if (subjectName === 'Nepali') return { mode: 'grouped', groupLimit: 3 };
+      if (subjectName === 'French') return { mode: 'shared' };
+      return { mode: 'single' };
+    },
+  },
+};
+
+const LANGUAGE_PERIOD_PRIORITY = [3, 4, 2, 5, 6, 7, 1, 8];
 
 // R11: Activity subjects placed in periods 6-8 (soft preference, hard block on 1-2).
 // Games is EXCLUDED — it has its own placement rules (any period 3-8, see GAMES_* constants).
@@ -367,6 +422,7 @@ export async function POST(request: NextRequest) {
     const roomBusy = new Set<string>(); // roomId|dayId-timeSlotId
     const groupedSectionSlotCount = new Map<string, number>();
     const groupedSectionSlotsByTeacherSubjectGrade = new Map<string, Set<string>>();
+    const languageGroupedSlotCount = new Map<string, number>();
 
     // Running workload counters (updated on every assignSlot call)
     const teacherLoad = new Map<string, number>(teachers.map(t => [t.id, 0]));
@@ -932,6 +988,7 @@ export async function POST(request: NextRequest) {
       roomBusy.clear();
       groupedSectionSlotCount.clear();
       groupedSectionSlotsByTeacherSubjectGrade.clear();
+      languageGroupedSlotCount.clear();
       gamesSlotCount.clear();
       sectionDayPeriodSubject.clear();
       teacherPeriodsByDay.clear();
@@ -1033,18 +1090,49 @@ export async function POST(request: NextRequest) {
             teacherPeriodsByDay.get(pdKey)!.add(timeSlot.periodNumber);
           }
         }
-      } else if (slot.teacherId || slot.labTeacherId) {
-        const teacherIds = new Set(
-          [slot.teacherId, slot.labTeacherId].filter((value): value is string => Boolean(value))
-        );
-        for (const assignedTeacherId of teacherIds) {
-          applyTeacherSlotState(
-            assignedTeacherId,
-            slot.sectionId,
-            slot.dayId,
-            slot.timeSlotId,
-            slot.subjectId
+      } else if (slot.teacherId || slot.labTeacherId || (slot as { notes?: string | null }).notes) {
+        const combinedMeta = parseCombinedSlotMetadata((slot as { notes?: string | null }).notes ?? null);
+        if (combinedMeta?.kind === 'language-block' && combinedMeta.options.length > 0) {
+          for (const option of combinedMeta.options) {
+            const teacherKey = `${slot.dayId}-${slot.timeSlotId}`;
+            const teacherBusyAtSlot = teacherBusy.get(option.teacherId)?.has(teacherKey) ?? false;
+            const groupedKey = `${option.teacherId}|${option.subjectId}|${combinedMeta.grade}|${slot.dayId}|${slot.timeSlotId}`;
+            const groupedCount = languageGroupedSlotCount.get(groupedKey) ?? 0;
+            const reusesGroupedSlot = option.sharing === 'grouped' && groupedCount > 0;
+            const skipLoadIncrement = option.sharing === 'shared'
+              ? teacherBusyAtSlot
+              : reusesGroupedSlot;
+
+            if (option.sharing === 'grouped') {
+              languageGroupedSlotCount.set(groupedKey, groupedCount + 1);
+            }
+
+            teacherBusy.get(option.teacherId)?.add(teacherKey);
+
+            if (!skipLoadIncrement) {
+              teacherLoad.set(option.teacherId, (teacherLoad.get(option.teacherId) ?? 0) + 1);
+              const dm = teacherDailyLoad.get(option.teacherId);
+              if (dm) dm.set(slot.dayId, (dm.get(slot.dayId) ?? 0) + 1);
+              if (timeSlot) {
+                const pdKey = `${option.teacherId}|${slot.dayId}`;
+                if (!teacherPeriodsByDay.has(pdKey)) teacherPeriodsByDay.set(pdKey, new Set());
+                teacherPeriodsByDay.get(pdKey)!.add(timeSlot.periodNumber);
+              }
+            }
+          }
+        } else {
+          const teacherIds = new Set(
+            [slot.teacherId, slot.labTeacherId].filter((value): value is string => Boolean(value))
           );
+          for (const assignedTeacherId of teacherIds) {
+            applyTeacherSlotState(
+              assignedTeacherId,
+              slot.sectionId,
+              slot.dayId,
+              slot.timeSlotId,
+              slot.subjectId
+            );
+          }
         }
       }
 
@@ -1565,6 +1653,93 @@ export async function POST(request: NextRequest) {
       return !allowedSubjectIds || allowedSubjectIds.has(a.subjectId);
     });
 
+    const languageBlocks: LanguageBlockSpec[] = [];
+    const excludedLanguageAssignments = new Set<string>();
+
+    for (const section of sections) {
+      const grade = sectionGradeMap.get(section.id) ?? '';
+      const template = REFERENCE_GRADE_REQUIREMENTS[grade];
+      if (!template) continue;
+
+      for (const bucket of ['2nd Language', '3rd Language'] as const) {
+        const periodsPerWeek = template[bucket];
+        if (!periodsPerWeek) continue;
+
+        const config = LANGUAGE_BUCKET_CONFIG[bucket];
+        const options: LanguageBlockOption[] = [];
+
+        for (const subjectName of config.subjectNames) {
+          const subject = subjectByName.get(subjectName);
+          if (!subject) continue;
+
+          const teacherAssignment = existingSectionTeacherMap.get(section.id)?.get(subject.id);
+          const teacher = teacherAssignment ? teachersById.get(teacherAssignment.teacherId) : null;
+          if (!teacher) continue;
+
+          const sharingRule = config.getSharingRule(subjectName);
+          options.push({
+            subjectId: subject.id,
+            subjectName: subject.name,
+            subjectCode: subject.code,
+            teacherId: teacher.id,
+            teacherName: teacher.name,
+            teacherAbbreviation: teacher.abbreviation,
+            sharing: sharingRule.mode,
+            groupLimit: sharingRule.groupLimit ?? null,
+          });
+
+          excludedLanguageAssignments.add(`${section.id}|${subject.id}`);
+        }
+
+        if (options.length === 0) {
+          warnings.push(`[language-block-skip] ${section.name} ${bucket}: no teacher assignments found`);
+          continue;
+        }
+
+        const missingOptions = config.subjectNames.filter(
+          (subjectName) => !options.some((option) => option.subjectName === subjectName)
+        );
+        if (missingOptions.length > 0) {
+          warnings.push(
+            `[language-block-missing] ${section.name} ${bucket}: missing ${missingOptions.join(', ')} teacher assignment(s)`
+          );
+        }
+
+        const displayOrder = config.subjectNames.filter(
+          (subjectName) => options.some((option) => option.subjectName === subjectName)
+        );
+        const representative = [...options].sort((a, b) => {
+          const modeRank = (mode: CombinedSlotSharingMode) =>
+            mode === 'single' ? 0 : mode === 'grouped' ? 1 : 2;
+          const modeDiff = modeRank(a.sharing) - modeRank(b.sharing);
+          if (modeDiff !== 0) return modeDiff;
+          return displayOrder.indexOf(a.subjectName) - displayOrder.indexOf(b.subjectName);
+        })[0];
+
+        if (!representative) continue;
+
+        languageBlocks.push({
+          bucket,
+          grade,
+          sectionId: section.id,
+          sectionName: section.name,
+          periodsPerWeek,
+          displayName: displayOrder.join(' / '),
+          displayCode: displayOrder
+            .map((subjectName) => subjectByName.get(subjectName)?.code ?? subjectName)
+            .join(' / '),
+          representativeSubjectId: representative.subjectId,
+          options: displayOrder
+            .map((subjectName) => options.find((option) => option.subjectName === subjectName))
+            .filter((option): option is LanguageBlockOption => Boolean(option)),
+        });
+      }
+    }
+
+    assignments = assignments.filter(
+      (assignment) => !excludedLanguageAssignments.has(`${assignment.sectionId}|${assignment.subjectId}`)
+    );
+
     const sectionTeacherMap = new Map<string, Map<string, { teacherId: string; periodsPerWeek: number }>>();
     for (const section of sections) {
       sectionTeacherMap.set(section.id, new Map());
@@ -1832,6 +2007,236 @@ export async function POST(request: NextRequest) {
       }
       return null;
     };
+
+    const getLanguageGroupKey = (
+      option: LanguageBlockOption,
+      grade: string,
+      dayId: string,
+      timeSlotId: string,
+    ) => `${option.teacherId}|${option.subjectId}|${grade}|${dayId}|${timeSlotId}`;
+
+    const canPlaceLanguageOption = (
+      block: LanguageBlockSpec,
+      option: LanguageBlockOption,
+      dayId: string,
+      timeSlotId: string,
+    ) => {
+      const key = `${dayId}-${timeSlotId}`;
+      const slot = timeSlots.find((item) => item.id === timeSlotId);
+      if (teacherUnavailabilitySet.has(`${option.teacherId}|${key}`)) return false;
+
+      const teacherBusyAtSlot = teacherBusy.get(option.teacherId)?.has(key) ?? false;
+      const groupedKey = getLanguageGroupKey(option, block.grade, dayId, timeSlotId);
+      const groupedCount = languageGroupedSlotCount.get(groupedKey) ?? 0;
+      const reusesGroupedSlot = option.sharing === 'grouped' && groupedCount > 0;
+      const reusesSharedSlot = option.sharing === 'shared' && teacherBusyAtSlot;
+
+      if (option.sharing === 'single' && teacherBusyAtSlot) return false;
+      if (option.sharing === 'grouped') {
+        if (teacherBusyAtSlot && !reusesGroupedSlot) return false;
+        if (reusesGroupedSlot && groupedCount >= (option.groupLimit ?? 1)) return false;
+      }
+
+      if (!reusesGroupedSlot && !reusesSharedSlot) {
+        const maxToday = teacherMaxPerDay.get(option.teacherId) ?? GLOBAL_MAX_PERIODS_PER_DAY;
+        if ((teacherDailyLoad.get(option.teacherId)?.get(dayId) ?? 0) >= maxToday) return false;
+        if (slot && hasRunOfFour(option.teacherId, dayId, slot.periodNumber)) return false;
+      }
+
+      return true;
+    };
+
+    const canPlaceLanguageBlock = (
+      block: LanguageBlockSpec,
+      dayId: string,
+      timeSlotId: string,
+    ) => {
+      const key = `${dayId}-${timeSlotId}`;
+      if (sectionBusy.get(block.sectionId)?.has(key)) return false;
+      return block.options.every((option) => canPlaceLanguageOption(block, option, dayId, timeSlotId));
+    };
+
+    const applyLanguageOptionState = (
+      block: LanguageBlockSpec,
+      option: LanguageBlockOption,
+      dayId: string,
+      timeSlotId: string,
+    ) => {
+      const key = `${dayId}-${timeSlotId}`;
+      const slot = timeSlots.find((item) => item.id === timeSlotId);
+      const teacherBusyAtSlot = teacherBusy.get(option.teacherId)?.has(key) ?? false;
+      const groupedKey = getLanguageGroupKey(option, block.grade, dayId, timeSlotId);
+      const groupedCount = languageGroupedSlotCount.get(groupedKey) ?? 0;
+      const reusesGroupedSlot = option.sharing === 'grouped' && groupedCount > 0;
+      const skipLoadIncrement = option.sharing === 'shared'
+        ? teacherBusyAtSlot
+        : reusesGroupedSlot;
+
+      if (option.sharing === 'grouped') {
+        languageGroupedSlotCount.set(groupedKey, groupedCount + 1);
+      }
+
+      teacherBusy.get(option.teacherId)?.add(key);
+
+      if (!skipLoadIncrement) {
+        teacherLoad.set(option.teacherId, (teacherLoad.get(option.teacherId) ?? 0) + 1);
+        const dm = teacherDailyLoad.get(option.teacherId);
+        if (dm) dm.set(dayId, (dm.get(dayId) ?? 0) + 1);
+        if (slot) {
+          const pdKey = `${option.teacherId}|${dayId}`;
+          if (!teacherPeriodsByDay.has(pdKey)) teacherPeriodsByDay.set(pdKey, new Set());
+          teacherPeriodsByDay.get(pdKey)!.add(slot.periodNumber);
+        }
+      }
+    };
+
+    const assignLanguageBlock = (
+      block: LanguageBlockSpec,
+      dayId: string,
+      timeSlotId: string,
+    ) => {
+      if (!canPlaceLanguageBlock(block, dayId, timeSlotId)) return false;
+
+      const key = `${dayId}-${timeSlotId}`;
+      const slot = timeSlots.find((item) => item.id === timeSlotId);
+      const sdKey = `${block.sectionId}|${dayId}`;
+      sectionBusy.get(block.sectionId)?.add(key);
+      sectionDaySubjects.get(sdKey)?.add(block.representativeSubjectId);
+      const sdm = sectionDailyLoad.get(block.sectionId);
+      if (sdm) sdm.set(dayId, (sdm.get(dayId) ?? 0) + 1);
+      if (slot) {
+        if (!sectionDayPeriodSubject.has(sdKey)) sectionDayPeriodSubject.set(sdKey, new Map());
+        sectionDayPeriodSubject.get(sdKey)!.set(slot.periodNumber, block.representativeSubjectId);
+      }
+
+      for (const option of block.options) {
+        applyLanguageOptionState(block, option, dayId, timeSlotId);
+      }
+
+      const storageOrder = [...block.options].sort((a, b) => {
+        const modeRank = (mode: CombinedSlotSharingMode) =>
+          mode === 'single' ? 0 : mode === 'grouped' ? 1 : 2;
+        const modeDiff = modeRank(a.sharing) - modeRank(b.sharing);
+        if (modeDiff !== 0) return modeDiff;
+        return block.options.findIndex((option) => option.subjectId === a.subjectId) -
+          block.options.findIndex((option) => option.subjectId === b.subjectId);
+      });
+      const storedTeacherIds = Array.from(new Set(storageOrder.map((option) => option.teacherId)));
+      const metadata: CombinedSlotMetadata = {
+        kind: 'language-block',
+        bucket: block.bucket,
+        grade: block.grade,
+        displayName: block.displayName,
+        displayCode: block.displayCode,
+        options: block.options,
+      };
+
+      createdSlots.push({
+        sectionId: block.sectionId,
+        dayId,
+        timeSlotId,
+        subjectId: block.representativeSubjectId,
+        teacherId: storedTeacherIds[0] ?? block.options[0].teacherId,
+        labTeacherId: storedTeacherIds[1] ?? null,
+        roomId: null,
+        notes: encodeCombinedSlotMetadata(metadata),
+        isLab: false,
+        isGames: false,
+        isYoga: false,
+        isLibrary: false,
+        isInnovation: false,
+        isWE: false,
+        isMusic: false,
+        isArt: false,
+        isFiller: false,
+      });
+      sectionSlotIndex.set(`${block.sectionId}|${dayId}|${timeSlotId}`, createdSlots.length - 1);
+      return true;
+    };
+
+    const scheduleLanguageBlocks = () => {
+      if (languageBlocks.length === 0) return;
+
+      const groups = new Map<string, LanguageBlockSpec[]>();
+      for (const block of languageBlocks) {
+        const groupKey = `${block.grade}|${block.bucket}`;
+        if (!groups.has(groupKey)) groups.set(groupKey, []);
+        groups.get(groupKey)!.push(block);
+      }
+
+      const orderedGroups = [...groups.values()].sort((a, b) => {
+        const periodDiff = (b[0]?.periodsPerWeek ?? 0) - (a[0]?.periodsPerWeek ?? 0);
+        if (periodDiff !== 0) return periodDiff;
+        if ((a[0]?.grade ?? '') !== (b[0]?.grade ?? '')) {
+          return (a[0]?.grade ?? '').localeCompare(b[0]?.grade ?? '');
+        }
+        return (a[0]?.bucket ?? '').localeCompare(b[0]?.bucket ?? '');
+      });
+
+      for (const group of orderedGroups) {
+        const exemplar = group[0];
+        if (!exemplar) continue;
+
+        const requiredDays = exemplar.periodsPerWeek;
+        const periodCandidates = LANGUAGE_PERIOD_PRIORITY
+          .map((periodNumber) => timeSlots.find((slot) => slot.periodNumber === periodNumber))
+          .filter((slot): slot is typeof timeSlots[number] => Boolean(slot));
+
+        let chosenTimeSlotId: string | null = null;
+        let chosenDayIds: string[] = [];
+
+        for (const periodSlot of periodCandidates) {
+          const viableDays = days
+            .filter((day) => group.every((block) => canPlaceLanguageBlock(block, day.id, periodSlot.id)))
+            .sort((a, b) => {
+              const aLoad = group.reduce((sum, block) => sum + (sectionDailyLoad.get(block.sectionId)?.get(a.id) ?? 0), 0);
+              const bLoad = group.reduce((sum, block) => sum + (sectionDailyLoad.get(block.sectionId)?.get(b.id) ?? 0), 0);
+              if (aLoad !== bLoad) return aLoad - bLoad;
+              return a.dayOrder - b.dayOrder;
+            });
+
+          if (viableDays.length >= requiredDays) {
+            chosenTimeSlotId = periodSlot.id;
+            chosenDayIds = viableDays.slice(0, requiredDays).map((day) => day.id);
+            break;
+          }
+
+          if (!chosenTimeSlotId && viableDays.length > chosenDayIds.length) {
+            chosenTimeSlotId = periodSlot.id;
+            chosenDayIds = viableDays.map((day) => day.id);
+          }
+        }
+
+        if (!chosenTimeSlotId) {
+          warnings.push(
+            `[language-block-fail] ${exemplar.grade} ${exemplar.bucket}: no common fixed period found`
+          );
+          continue;
+        }
+
+        for (const dayId of chosenDayIds) {
+          for (const block of group) {
+            if (!assignLanguageBlock(block, dayId, chosenTimeSlotId)) {
+              warnings.push(
+                `[language-block-slot] ${block.sectionName} ${block.bucket}: failed fixed-period placement`
+              );
+            }
+          }
+        }
+
+        const periodNumber = timeSlots.find((slot) => slot.id === chosenTimeSlotId)?.periodNumber ?? '?';
+        allocationNotes.push(
+          `[language-block] ${exemplar.grade} ${exemplar.bucket} anchored to P${periodNumber} for ${chosenDayIds.length}/${requiredDays} day(s)`
+        );
+        if (chosenDayIds.length < requiredDays) {
+          warnings.push(
+            `[language-block-partial] ${exemplar.grade} ${exemplar.bucket}: placed ${chosenDayIds.length}/${requiredDays} fixed-period slot(s)`
+          );
+        }
+      }
+    };
+
+    scheduleLanguageBlocks();
 
     const pickRelaxedSlot = (
       sectionId: string,
@@ -2692,12 +3097,12 @@ export async function POST(request: NextRequest) {
 
     // ── 9. Update teacher workloads from DB ──────────────────────────────────
     const buildTeacherWorkloadMap = (
-      slotRows: Array<{ teacherId?: string | null; labTeacherId?: string | null; dayId: string; timeSlotId: string }>
+      slotRows: Array<{ teacherId?: string | null; labTeacherId?: string | null; notes?: string | null; dayId: string; timeSlotId: string }>
     ) => {
       const teacherSlotKeys = new Map<string, Set<string>>();
       for (const row of slotRows) {
         const key = `${row.dayId}|${row.timeSlotId}`;
-        for (const teacherId of [row.teacherId, row.labTeacherId]) {
+        for (const teacherId of getAllSlotTeacherIds(row)) {
           if (!teacherId) continue;
           if (!teacherSlotKeys.has(teacherId)) teacherSlotKeys.set(teacherId, new Set());
           teacherSlotKeys.get(teacherId)!.add(key);
@@ -2711,7 +3116,7 @@ export async function POST(request: NextRequest) {
       ? new Map(teachers.map(t => [t.id, teacherLoad.get(t.id) ?? 0]))
       : buildTeacherWorkloadMap(
           await db.timetableSlot.findMany({
-            select: { teacherId: true, labTeacherId: true, dayId: true, timeSlotId: true },
+            select: { teacherId: true, labTeacherId: true, notes: true, dayId: true, timeSlotId: true },
           })
         );
     if (!preview) {
@@ -2735,6 +3140,7 @@ export async function POST(request: NextRequest) {
         teacherId: s.teacherId ?? ((s as any).labTeacherId as string),
         labTeacherId: (s as any).labTeacherId ?? null,
         roomId: (s as any).roomId ?? null,
+        notes: (s as any).notes ?? null,
         isLab: s.isLab,
         isGames: s.isGames,
         isYoga: s.isYoga,
@@ -2859,6 +3265,7 @@ export async function POST(request: NextRequest) {
             teacherId: s.teacherId,
             labTeacherId: s.labTeacherId ?? null,
             roomId: s.roomId ?? null,
+            notes: s.notes ?? null,
             isLab: s.isLab,
             isGames: s.isGames,
             isYoga: s.isYoga,

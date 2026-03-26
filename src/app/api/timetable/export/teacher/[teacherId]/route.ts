@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { buildTeacherGrid } from '@/lib/export/timetable-grid';
 import { generateTimetablePdf } from '@/lib/export/timetable-pdf';
 import { generateTimetableXlsx } from '@/lib/export/timetable-xlsx';
+import { slotHasTeacherId } from '@/lib/combined-slot';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -27,7 +28,6 @@ export async function GET(
   const [teacher, slots, days, timeSlots, schoolConfig] = await Promise.all([
     db.teacher.findUnique({ where: { id: teacherId } }),
     db.timetableSlot.findMany({
-      where:   { OR: [{ teacherId }, { labTeacherId: teacherId }] },
       include: { day: true, timeSlot: true, subject: true, teacher: true, labTeacher: true, section: true },
       orderBy: [{ day: { dayOrder: 'asc' } }, { timeSlot: { periodNumber: 'asc' } }],
     }),
@@ -41,7 +41,13 @@ export async function GET(
   }
 
   // ── Build grid ──────────────────────────────────────────────────────────────
-  const grid = buildTeacherGrid(teacher.name, teacher.abbreviation, slots, days, timeSlots);
+  const grid = buildTeacherGrid(
+    teacher.name,
+    teacher.abbreviation,
+    slots.filter((slot) => slotHasTeacherId(slot, teacherId)),
+    days,
+    timeSlots
+  );
   const sn = schoolConfig?.schoolName?.trim() || 'Modern Indian School';
   const yr = schoolConfig?.academicYear?.trim() || '2025-26';
   grid.subtitle = `${sn}  |  Academic Year ${yr}`;

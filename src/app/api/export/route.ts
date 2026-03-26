@@ -7,6 +7,13 @@ import { sortSectionsByGradeThenName } from '@/lib/section-sort';
 import { generateBulkTimetablePdf } from '@/lib/export/timetable-pdf';
 import { generateBulkTimetableXlsx } from '@/lib/export/timetable-xlsx';
 import type { TimetableGrid } from '@/lib/export/timetable-grid';
+import {
+  getAllSlotTeacherIds,
+  getCombinedSlotDisplay,
+  getSlotTeacherAbbreviations,
+  getSlotTeacherNames,
+  slotHasTeacherId,
+} from '@/lib/combined-slot';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,8 +26,8 @@ function schoolSubtitle(schoolName: string | null, academicYear: string | null):
 }
 
 function getTeacherExportLabel(slot: { teacher?: { name?: string | null; abbreviation?: string | null } | null; labTeacher?: { name?: string | null; abbreviation?: string | null } | null }) {
-  const names = [slot.teacher?.name, slot.labTeacher?.name].filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
-  const abbreviations = [slot.teacher?.abbreviation, slot.labTeacher?.abbreviation].filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
+  const names = getSlotTeacherNames(slot);
+  const abbreviations = getSlotTeacherAbbreviations(slot);
   return {
     names: names.join(' + '),
     abbreviations: abbreviations.join(' + '),
@@ -96,8 +103,8 @@ export async function GET(request: NextRequest) {
         period: slot.timeSlot.periodNumber,
         startTime: slot.timeSlot.startTime,
         endTime: slot.timeSlot.endTime,
-        subject: slot.subject?.name ?? '',
-        subjectCode: slot.subject?.code ?? '',
+        subject: getCombinedSlotDisplay(slot.notes)?.name ?? slot.subject?.name ?? '',
+        subjectCode: getCombinedSlotDisplay(slot.notes)?.code ?? slot.subject?.code ?? '',
         teacher: getTeacherExportLabel(slot).names,
         teacherAbbr: getTeacherExportLabel(slot).abbreviations,
         labTeacher: slot.labTeacher?.name ?? '',
@@ -119,7 +126,7 @@ export async function GET(request: NextRequest) {
           String(slot.timeSlot.periodNumber),
           slot.timeSlot.startTime,
           slot.timeSlot.endTime,
-          slot.subject?.name ?? '',
+          getCombinedSlotDisplay(slot.notes)?.name ?? slot.subject?.name ?? '',
           teacherLabel.names,
           slot.labTeacher?.name ?? '',
         ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
@@ -139,8 +146,8 @@ export async function GET(request: NextRequest) {
 
       if (type === 'teacher') {
         grids = teachers.map(t => {
-          const slots = allSlots.filter(s => s.teacherId === t.id || s.labTeacherId === t.id);
-          const g = buildTeacherGrid(t.name, t.abbreviation, slots, days, timeSlots);
+          const teacherSlots = allSlots.filter((slot) => slotHasTeacherId(slot, t.id));
+          const g = buildTeacherGrid(t.name, t.abbreviation, teacherSlots, days, timeSlots);
           g.subtitle = subtitle;
           return g;
         });
@@ -172,8 +179,8 @@ export async function GET(request: NextRequest) {
 
       if (type === 'teacher') {
         grids = teachers.map(t => {
-          const slots = allSlots.filter(s => s.teacherId === t.id || s.labTeacherId === t.id);
-          const g = buildTeacherGrid(t.name, t.abbreviation, slots, days, timeSlots);
+          const teacherSlots = allSlots.filter((slot) => slotHasTeacherId(slot, t.id));
+          const g = buildTeacherGrid(t.name, t.abbreviation, teacherSlots, days, timeSlots);
           g.subtitle = subtitle;
           return g;
         });
@@ -213,13 +220,13 @@ export async function GET(request: NextRequest) {
 }
 
 function buildTeacherWorkloadMap(
-  slots: Array<{ teacherId: string | null; labTeacherId: string | null; dayId: string; timeSlotId: string }>
+  slots: Array<{ teacherId: string | null; labTeacherId: string | null; notes?: string | null; dayId: string; timeSlotId: string }>
 ) {
   const teacherSlotKeys = new Map<string, Set<string>>();
 
   for (const slot of slots) {
     const key = `${slot.dayId}|${slot.timeSlotId}`;
-    for (const teacherId of [slot.teacherId, slot.labTeacherId]) {
+    for (const teacherId of getAllSlotTeacherIds(slot)) {
       if (!teacherId) continue;
       if (!teacherSlotKeys.has(teacherId)) {
         teacherSlotKeys.set(teacherId, new Set());

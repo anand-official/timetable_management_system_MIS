@@ -3,6 +3,11 @@
  * Converts raw DB slots into a typed 2-D grid with lab-pair detection.
  */
 
+import {
+  getCombinedSlotDisplay,
+  getSlotTeacherAbbreviations,
+} from '@/lib/combined-slot';
+
 export interface DayInfo {
   id: string;
   name: string;
@@ -29,9 +34,9 @@ export interface CellData {
   isWE: boolean;
   subjectId: string | null;
   /**
-   * rowSpan = 2 → this cell spans 2 rows (lab double period start)
-   * rowSpan = 0 → this cell is consumed by the row above (skip it)
-   * undefined   → normal single-period cell
+   * rowSpan = 2 -> this cell spans 2 rows (lab double period start)
+   * rowSpan = 0 -> this cell is consumed by the row above (skip it)
+   * undefined   -> normal single-period cell
    */
   rowSpan?: number;
 }
@@ -45,7 +50,7 @@ export interface TimetableGrid {
   cells: (CellData | null)[][];
 }
 
-/** Colour hint for a cell — used by both PDF and Excel renderers */
+/** Colour hint for a cell -> used by both PDF and Excel renderers */
 export function cellColor(cell: CellData): string {
   if (cell.isLab)        return '#DBEAFE'; // blue-100
   if (cell.isGames)      return '#DCFCE7'; // green-100
@@ -67,18 +72,19 @@ export function cellColorArgb(cell: CellData): string {
   return 'FFFFFFFF';
 }
 
-// ── Slot shape returned by Prisma include ─────────────────────────────────────
+// Slot shape returned by Prisma include
 type RawSlot = any;
 
 function teacherAbbreviationLabel(slot: RawSlot) {
-  return [slot.teacher?.abbreviation, slot.labTeacher?.abbreviation]
-    .filter((value: unknown, index: number, list: unknown[]) => Boolean(value) && list.indexOf(value) === index)
-    .join(' + ');
+  return getSlotTeacherAbbreviations(slot).join(' + ');
 }
 
 function makeCell(slot: RawSlot, line2: string): CellData {
+  const combinedDisplay = getCombinedSlotDisplay(slot.notes);
   return {
-    line1: slot.isWE ? 'W.E.' : (slot.subject?.code ?? slot.subject?.name ?? '—'),
+    line1: slot.isWE
+      ? 'W.E.'
+      : (combinedDisplay?.code ?? slot.subject?.code ?? slot.subject?.name ?? '-'),
     line2,
     isLab: slot.isLab ?? false,
     isGames: slot.isGames ?? false,
@@ -115,7 +121,7 @@ export function buildClassGrid(
   days: DayInfo[],
   periods: PeriodInfo[],
 ): TimetableGrid {
-  const sortedDays    = [...days].sort((a, b) => a.dayOrder - b.dayOrder);
+  const sortedDays = [...days].sort((a, b) => a.dayOrder - b.dayOrder);
   const sortedPeriods = [...periods].sort((a, b) => a.periodNumber - b.periodNumber);
 
   const slotMap = new Map<string, RawSlot>();
@@ -133,9 +139,9 @@ export function buildClassGrid(
   detectLabPairs(cells);
 
   return {
-    title:    `Class Timetable — ${sectionName}`,
+    title: `Class Timetable - ${sectionName}`,
     subtitle: 'Modern Indian School  |  Academic Year 2025-26',
-    days:    sortedDays,
+    days: sortedDays,
     periods: sortedPeriods,
     cells,
   };
@@ -148,26 +154,32 @@ export function buildTeacherGrid(
   days: DayInfo[],
   periods: PeriodInfo[],
 ): TimetableGrid {
-  const sortedDays    = [...days].sort((a, b) => a.dayOrder - b.dayOrder);
+  const sortedDays = [...days].sort((a, b) => a.dayOrder - b.dayOrder);
   const sortedPeriods = [...periods].sort((a, b) => a.periodNumber - b.periodNumber);
 
-  const slotMap = new Map<string, RawSlot>();
+  const slotMap = new Map<string, RawSlot[]>();
   for (const s of slots) {
-    slotMap.set(`${s.dayId}|${s.timeSlot.periodNumber}`, s);
+    const key = `${s.dayId}|${s.timeSlot.periodNumber}`;
+    if (!slotMap.has(key)) slotMap.set(key, []);
+    slotMap.get(key)!.push(s);
   }
 
   const cells: (CellData | null)[][] = sortedPeriods.map(period =>
     sortedDays.map(day => {
-      const s = slotMap.get(`${day.id}|${period.periodNumber}`);
-      return s ? makeCell(s, s.section?.name ?? '') : null;
+      const group = slotMap.get(`${day.id}|${period.periodNumber}`);
+      if (!group || group.length === 0) return null;
+      const sectionLabel = Array.from(
+        new Set(group.map((slot) => slot.section?.name).filter(Boolean))
+      ).join(' / ');
+      return makeCell(group[0], sectionLabel);
     })
   );
 
-  // No lab merging for teacher view — different sections per lab slot
+  // No lab merging for teacher view -> different sections per lab slot
   return {
-    title:    `Teacher Timetable — ${teacherName} (${teacherAbbr})`,
+    title: `Teacher Timetable - ${teacherName} (${teacherAbbr})`,
     subtitle: 'Modern Indian School  |  Academic Year 2025-26',
-    days:    sortedDays,
+    days: sortedDays,
     periods: sortedPeriods,
     cells,
   };

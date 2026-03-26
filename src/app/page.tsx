@@ -40,6 +40,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { DEFAULT_TEACHER_DEPARTMENTS } from '@/lib/teacher-departments';
 import { getEligibleTeachersForSectionSubject } from '@/lib/teacher-eligibility';
 import { useIsMobile } from '@/hooks/use-mobile';
+import {
+  getAllSlotTeacherIds,
+  getCombinedSlotDisplay,
+  getSlotTeacherAbbreviations as getCombinedSlotTeacherAbbreviations,
+  getSlotTeacherNames as getCombinedSlotTeacherNames,
+} from '@/lib/combined-slot';
 
 // Types
 interface Teacher {
@@ -107,6 +113,7 @@ interface TimetableSlot {
   isWE: boolean;
   isFiller?: boolean;
   manuallyEdited?: boolean;
+  notes?: string | null;
 }
 
 interface WorkloadData {
@@ -137,6 +144,7 @@ interface PreviewSlotPayload {
   teacherId: string;
   labTeacherId?: string | null;
   roomId?: string | null;
+  notes?: string | null;
   isLab?: boolean;
   isGames?: boolean;
   isYoga?: boolean;
@@ -512,7 +520,8 @@ export default function TimetableManagementSystem() {
             current.subjectId !== preview.subjectId ||
             current.teacherId !== preview.teacherId ||
             (current.labTeacherId ?? null) !== (preview.labTeacherId ?? null) ||
-            (current.room?.id ?? null) !== (preview.roomId ?? null);
+            (current.room?.id ?? null) !== (preview.roomId ?? null) ||
+            (current.notes ?? null) !== (preview.notes ?? null);
           if (changed) {
             diffs.push({
               key,
@@ -574,6 +583,7 @@ export default function TimetableManagementSystem() {
           teacherId: preview.teacherId,
           labTeacherId: preview.labTeacherId ?? null,
           roomId: preview.roomId ?? null,
+          notes: preview.notes ?? null,
           isLab: preview.isLab,
           isGames: preview.isGames,
           isYoga: preview.isYoga,
@@ -1045,8 +1055,17 @@ export default function TimetableManagementSystem() {
 
   // Get timetable grid for a teacher
   const getTeacherTimetable = (teacherId: string) => {
-    return slots.filter(s => s.teacherId === teacherId || s.labTeacherId === teacherId);
+    return slots.filter(s => getAllSlotTeacherIds(s).includes(teacherId));
   };
+
+  const getTeacherWorkloadCount = (teacherId: string) => {
+    return new Set(
+      getTeacherTimetable(teacherId).map((slot) => `${slot.dayId}|${slot.timeSlotId}`)
+    ).size;
+  };
+
+  const getTeacherCellSlots = (teacherSlots: TimetableSlot[], dayId: string, timeSlotId: string) =>
+    teacherSlots.filter((slot) => slot.dayId === dayId && slot.timeSlotId === timeSlotId);
 
   // Get slot for specific day/period
   const getSlot = (sectionSlots: TimetableSlot[], dayId: string, timeSlotId: string) => {
@@ -1054,6 +1073,10 @@ export default function TimetableManagementSystem() {
   };
 
   const getDisplayedSubject = (slot: TimetableSlot) => {
+    const combinedDisplay = getCombinedSlotDisplay(slot.notes);
+    if (combinedDisplay) {
+      return combinedDisplay;
+    }
     if (slot.isWE) {
       return { code: 'W.E.', name: 'Work Experience' };
     }
@@ -1064,14 +1087,41 @@ export default function TimetableManagementSystem() {
   };
 
   const getSlotTeacherAbbreviation = (slot: Partial<Pick<TimetableSlot, 'teacher' | 'labTeacher'>>) =>
-    [slot.teacher?.abbreviation, slot.labTeacher?.abbreviation]
-      .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index)
-      .join(' + ');
+    getCombinedSlotTeacherAbbreviations(slot).join(' + ');
 
   const getSlotTeacherNames = (slot: Partial<Pick<TimetableSlot, 'teacher' | 'labTeacher'>>) =>
-    [slot.teacher?.name, slot.labTeacher?.name]
-      .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index)
+    getCombinedSlotTeacherNames(slot).join(' + ');
+
+  const getPreviewDisplayedSubject = (slot?: PreviewSlotPayload | null) => {
+    if (!slot) return null;
+    const combinedDisplay = getCombinedSlotDisplay(slot.notes);
+    if (combinedDisplay) return combinedDisplay;
+    const subject = subjects.find((item) => item.id === slot.subjectId);
+    return {
+      code: subject?.code || subject?.name || '—',
+      name: subject?.name || subject?.code || slot.subjectId,
+    };
+  };
+
+  const getPreviewTeacherNames = (slot?: PreviewSlotPayload | null) => {
+    if (!slot) return '';
+    const combinedNames = getCombinedSlotTeacherNames(slot);
+    if (combinedNames.length > 0) return combinedNames.join(' + ');
+    return getAllSlotTeacherIds(slot)
+      .map((id) => teachers.find((teacher) => teacher.id === id)?.name ?? '')
+      .filter((value, index, list) => value && list.indexOf(value) === index)
       .join(' + ');
+  };
+
+  const getPreviewTeacherAbbreviation = (slot?: PreviewSlotPayload | null) => {
+    if (!slot) return '';
+    const combinedAbbreviations = getCombinedSlotTeacherAbbreviations(slot);
+    if (combinedAbbreviations.length > 0) return combinedAbbreviations.join(' + ');
+    return getAllSlotTeacherIds(slot)
+      .map((id) => teachers.find((teacher) => teacher.id === id)?.abbreviation ?? '')
+      .filter((value, index, list) => value && list.indexOf(value) === index)
+      .join(' + ');
+  };
 
   // Status badge color
   const getStatusColor = (status: string) => {
@@ -1873,6 +1923,7 @@ export default function TimetableManagementSystem() {
                                           isLibrary: cellSlot.isLibrary,
                                           isInnovation: cellSlot.isInnovation,
                                           isWE: cellSlot.isWE,
+                                          notes: cellSlot.notes ?? null,
                                         });
                                         setEditDialogOpen(true);
                                       }}
@@ -2001,8 +2052,9 @@ export default function TimetableManagementSystem() {
                 {(() => {
                   const teacher = teachers.find(t => t.id === selectedTeacher);
                   const teacherSlots = getTeacherTimetable(selectedTeacher);
-                  const workloadPct = Math.round((teacherSlots.length / (teacher?.targetWorkload || 30)) * 100);
-                  const wStatus = getWorkloadStatus(teacherSlots.length, teacher?.targetWorkload || 30);
+                  const workloadCount = getTeacherWorkloadCount(selectedTeacher);
+                  const workloadPct = Math.round((workloadCount / (teacher?.targetWorkload || 30)) * 100);
+                  const wStatus = getWorkloadStatus(workloadCount, teacher?.targetWorkload || 30);
                   return (
                     <div className="bg-white rounded-2xl card-shadow mb-4 p-5">
                       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -2023,7 +2075,7 @@ export default function TimetableManagementSystem() {
                         <div className="flex flex-col items-end gap-1.5">
                           <div className="flex items-center gap-2">
                             <span className="text-sm text-slate-500">Workload</span>
-                            <span className="text-lg font-bold text-slate-900">{teacherSlots.length}</span>
+                            <span className="text-lg font-bold text-slate-900">{workloadCount}</span>
                             <span className="text-sm text-slate-400">/ {teacher?.targetWorkload}</span>
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${wStatus === 'OK' ? 'bg-emerald-50 text-emerald-600' : wStatus === 'Over' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
                               {wStatus}
@@ -2069,8 +2121,10 @@ export default function TimetableManagementSystem() {
                                 </div>
                               </TableCell>
                               {days.map(day => {
-                                const cellSlot = getSlot(teacherSlots, day.id, slot.id);
+                                const cellSlots = getTeacherCellSlots(teacherSlots, day.id, slot.id);
+                                const cellSlot = cellSlots[0];
                                 const displayedSubject = cellSlot ? getDisplayedSubject(cellSlot) : null;
+                                const sectionLabel = Array.from(new Set(cellSlots.map((item) => item.section?.name).filter(Boolean))).join(' / ');
                                 return (
                                   <TableCell key={day.id} className="p-1.5">
                                     {cellSlot ? (
@@ -2085,7 +2139,7 @@ export default function TimetableManagementSystem() {
                                             ? <Lock className="h-3 w-3 text-amber-500" />
                                             : <Unlock className="h-3 w-3 text-slate-300 hover:text-slate-500" />}
                                         </button>
-                                        <div className="font-bold text-sm text-indigo-700">{cellSlot.section?.name}</div>
+                                        <div className="font-bold text-sm text-indigo-700">{sectionLabel || cellSlot.section?.name}</div>
                                         <div className="text-[11px] text-slate-500 font-medium">{displayedSubject?.code}</div>
                                         {cellSlot.room?.name && (
                                           <div className="text-[10px] text-slate-400">{cellSlot.room.name}</div>
@@ -3039,18 +3093,12 @@ export default function TimetableManagementSystem() {
                 if (previewFilterDay !== 'all' && r.dayId !== previewFilterDay) return false;
                 if (previewSearch) {
                   const q = previewSearch.toLowerCase();
-                  const cs = r.current?.subject?.name?.toLowerCase() ?? '';
+                  const cs = (r.current ? getDisplayedSubject(r.current)?.name : '').toLowerCase();
                   const ct = getSlotTeacherNames(r.current ?? {}).toLowerCase();
                   const cta = getSlotTeacherAbbreviation(r.current ?? {}).toLowerCase();
-                  const ps = subjects.find(s => s.id === r.preview?.subjectId)?.name?.toLowerCase() ?? '';
-                  const pt = [r.preview?.teacherId, r.preview?.labTeacherId]
-                    .map(id => teachers.find(t => t.id === id)?.name?.toLowerCase() ?? '')
-                    .filter((value, index, list) => value && list.indexOf(value) === index)
-                    .join(' + ');
-                  const pta = [r.preview?.teacherId, r.preview?.labTeacherId]
-                    .map(id => teachers.find(t => t.id === id)?.abbreviation?.toLowerCase() ?? '')
-                    .filter((value, index, list) => value && list.indexOf(value) === index)
-                    .join(' + ');
+                  const ps = (getPreviewDisplayedSubject(r.preview)?.name ?? '').toLowerCase();
+                  const pt = getPreviewTeacherNames(r.preview).toLowerCase();
+                  const pta = getPreviewTeacherAbbreviation(r.preview).toLowerCase();
                   if (!cs.includes(q) && !ct.includes(q) && !cta.includes(q) && !ps.includes(q) && !pt.includes(q) && !pta.includes(q)) return false;
                 }
                 return true;
@@ -3125,27 +3173,17 @@ export default function TimetableManagementSystem() {
                           const periodNo = ts?.periodNumber ?? '?';
                           const periodTime = ts ? `${ts.startTime}–${ts.endTime}` : '';
 
-                          const currentSubj = row.current?.subject?.name ?? row.current?.subjectId ?? '—';
+                          const currentSubj = row.current
+                            ? getDisplayedSubject(row.current)?.name ?? row.current.subjectId ?? '—'
+                            : '—';
                           const currentTeacherName = row.current ? getSlotTeacherNames(row.current) : '';
                           const currentTeacherAbbr = row.current
                             ? getSlotTeacherAbbreviation(row.current) || row.current.teacherId || '—'
                             : '—';
 
-                          const previewSubj = row.preview
-                            ? (subjects.find(s => s.id === row.preview!.subjectId)?.name ?? row.preview.subjectId ?? '—')
-                            : '—';
-                          const previewTeacherAbbr = row.preview
-                            ? [row.preview.teacherId, row.preview.labTeacherId]
-                                .map(id => teachers.find(t => t.id === id)?.abbreviation ?? '')
-                                .filter((value, index, list) => value && list.indexOf(value) === index)
-                                .join(' + ') || row.preview.teacherId || '—'
-                            : '—';
-                          const previewTeacherName = row.preview
-                            ? [row.preview.teacherId, row.preview.labTeacherId]
-                                .map(id => teachers.find(t => t.id === id)?.name ?? '')
-                                .filter((value, index, list) => value && list.indexOf(value) === index)
-                                .join(' + ')
-                            : '';
+                          const previewSubj = getPreviewDisplayedSubject(row.preview)?.name ?? row.preview?.subjectId ?? '—';
+                          const previewTeacherAbbr = getPreviewTeacherAbbreviation(row.preview) || row.preview?.teacherId || '—';
+                          const previewTeacherName = getPreviewTeacherNames(row.preview);
 
                           const typeStyle = {
                             add: { bg: 'border-l-emerald-400 bg-emerald-50/40', badge: 'bg-emerald-100 text-emerald-700', label: '+ ADDED' },

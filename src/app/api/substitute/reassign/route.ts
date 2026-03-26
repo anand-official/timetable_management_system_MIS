@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { normalizeDateOnly } from '@/lib/substitute';
+import { slotHasTeacherId } from '@/lib/combined-slot';
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,19 +44,15 @@ export async function POST(request: NextRequest) {
         throw new Error('Slot was already reassigned');
       }
 
-      const busyConflict = await tx.timetableSlot.findFirst({
+      const busyCandidates = await tx.timetableSlot.findMany({
         where: {
-          OR: [
-            { teacherId: substituteTeacherId },
-            { labTeacherId: substituteTeacherId },
-          ],
           dayId: currentSlot.dayId,
           timeSlotId: currentSlot.timeSlotId,
           NOT: { id: currentSlot.id },
         },
-        select: { id: true },
+        select: { id: true, teacherId: true, labTeacherId: true, notes: true },
       });
-      if (busyConflict) {
+      if (busyCandidates.some((candidate) => slotHasTeacherId(candidate, substituteTeacherId))) {
         throw new Error('Substitute teacher is already booked in this period');
       }
 

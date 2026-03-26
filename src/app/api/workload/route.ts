@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getAllSlotTeacherIds, slotHasTeacherId } from '@/lib/combined-slot';
 
 function workloadStatus(current: number, target: number): string {
   if (target <= 0) return current > 0 ? 'Over' : 'OK';
@@ -25,6 +26,27 @@ function mergeTeacherSlots<T extends { id: string }>(...groups: T[][]) {
   return Array.from(merged.values());
 }
 
+function buildTeacherWorkloadMap(
+  slots: Array<{ teacherId?: string | null; labTeacherId?: string | null; notes?: string | null; dayId: string; timeSlotId: string }>
+) {
+  const teacherSlotKeys = new Map<string, Set<string>>();
+
+  for (const slot of slots) {
+    const key = `${slot.dayId}|${slot.timeSlotId}`;
+    for (const teacherId of getAllSlotTeacherIds(slot)) {
+      if (!teacherId) continue;
+      if (!teacherSlotKeys.has(teacherId)) {
+        teacherSlotKeys.set(teacherId, new Set());
+      }
+      teacherSlotKeys.get(teacherId)!.add(key);
+    }
+  }
+
+  return new Map(
+    Array.from(teacherSlotKeys.entries()).map(([teacherId, slotKeys]) => [teacherId, slotKeys.size])
+  );
+}
+
 // ── GET ────────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -38,21 +60,33 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid teacher ID' }, { status: 400 });
       }
 
-      const teacher = await db.teacher.findUnique({
-        where: { id: teacherId },
-        include: {
-          teacherSubjects: { include: { subject: true, section: true } },
-          timetableSlots: { include: { day: true, timeSlot: true, subject: true, section: true } },
-          labTimetableSlots: { include: { day: true, timeSlot: true, subject: true, section: true } },
-        },
-      });
+      const [teacher, allSlots] = await Promise.all([
+        db.teacher.findUnique({
+          where: { id: teacherId },
+          include: {
+            teacherSubjects: { include: { subject: true, section: true } },
+          },
+        }),
+        db.timetableSlot.findMany({
+          include: { day: true, timeSlot: true, subject: true, section: true },
+          orderBy: [{ day: { dayOrder: 'asc' } }, { timeSlot: { periodNumber: 'asc' } }],
+        }),
+      ]);
 
       if (!teacher) {
         return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
       }
 
-      const mergedSlots = mergeTeacherSlots(teacher.timetableSlots, teacher.labTimetableSlots);
-      const current = mergedSlots.length;
+      const mergedSlots = allSlots.filter((slot) => slotHasTeacherId(slot, teacherId));
+      const current = buildTeacherWorkloadMap(
+        mergedSlots.map((slot) => ({
+          teacherId: slot.teacherId,
+          labTeacherId: slot.labTeacherId,
+          notes: slot.notes ?? null,
+          dayId: slot.dayId,
+          timeSlotId: slot.timeSlotId,
+        }))
+      ).get(teacherId) ?? 0;
       const target = Math.max(teacher.targetWorkload, 1);
 
       return NextResponse.json({
@@ -81,17 +115,22 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const teachers = await db.teacher.findMany({
-      include: {
-        teacherSubjects: { include: { subject: true, section: true } },
-        timetableSlots: true,
-        labTimetableSlots: true,
-      },
-      orderBy: { department: 'asc' },
-    });
+    const [teachers, allSlots] = await Promise.all([
+      db.teacher.findMany({
+        include: {
+          teacherSubjects: { include: { subject: true, section: true } },
+        },
+        orderBy: { department: 'asc' },
+      }),
+      db.timetableSlot.findMany({
+        select: { id: true, teacherId: true, labTeacherId: true, notes: true, dayId: true, timeSlotId: true },
+      }),
+    ]);
+
+    const workloadMap = buildTeacherWorkloadMap(allSlots);
 
     const workloadData = teachers.map(t => {
-      const current = mergeTeacherSlots(t.timetableSlots, t.labTimetableSlots).length;
+      const current = workloadMap.get(t.id) ?? 0;
       const diff = current - t.targetWorkload;
       return {
         id: t.id,
@@ -127,15 +166,22 @@ export async function GET(request: NextRequest) {
 
 export async function POST() {
   try {
-    const teachers = await db.teacher.findMany({
-      include: { teacherSubjects: true, timetableSlots: true, labTimetableSlots: true },
-    });
+    const [teachers, allSlots] = await Promise.all([
+      db.teacher.findMany({
+        include: { teacherSubjects: true },
+      }),
+      db.timetableSlot.findMany({
+        select: { teacherId: true, labTeacherId: true, notes: true, dayId: true, timeSlotId: true },
+      }),
+    ]);
+
+    const workloadMap = buildTeacherWorkloadMap(allSlots);
 
     await db.workloadValidation.deleteMany();
 
     const validations = await Promise.all(
       teachers.map(teacher => {
-        const current = mergeTeacherSlots(teacher.timetableSlots, teacher.labTimetableSlots).length;
+        const current = workloadMap.get(teacher.id) ?? 0;
         const diff = current - teacher.targetWorkload;
         const status = Math.abs(diff) <= 2 ? 'OK' : diff < 0 ? 'Under' : 'Over';
         const warnings: string[] = [];

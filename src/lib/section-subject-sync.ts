@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { teacherCanCoverSubject } from '@/lib/teacher-eligibility';
+import { slotHasTeacherId } from '@/lib/combined-slot';
 
 type DbClient = Prisma.TransactionClient | PrismaClient;
 
@@ -179,12 +180,8 @@ export async function assertTeacherAvailableForSectionSubjectSlots(
 
   if (constrainedTargets.length === 0) return;
 
-  const conflicts = await db.timetableSlot.findMany({
+  const candidateSlots = await db.timetableSlot.findMany({
     where: {
-      OR: [
-        { teacherId: args.teacherId },
-        { labTeacherId: args.teacherId },
-      ],
       NOT: { sectionId: args.sectionId },
       AND: [
         {
@@ -196,16 +193,17 @@ export async function assertTeacherAvailableForSectionSubjectSlots(
       ],
     },
     select: {
+      teacherId: true,
+      labTeacherId: true,
+      notes: true,
       day: { select: { name: true } },
       timeSlot: { select: { periodNumber: true } },
       section: { select: { name: true } },
     },
-    take: 1,
   });
 
-  if (conflicts.length === 0) return;
-
-  const [firstConflict] = conflicts;
+  const firstConflict = candidateSlots.find((slot) => slotHasTeacherId(slot, args.teacherId));
+  if (!firstConflict) return;
   throw new Error(
     `Teacher already has a clash with ${firstConflict.section.name} on ${firstConflict.day.name} period ${firstConflict.timeSlot.periodNumber}`
   );

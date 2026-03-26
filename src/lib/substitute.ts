@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { getAllSlotTeacherIds, slotHasTeacherId } from '@/lib/combined-slot';
 
 export function normalizeDateOnly(input: string | Date): Date {
   const d = input instanceof Date ? new Date(input) : new Date(input);
@@ -10,13 +11,13 @@ function getDayName(date: Date): string {
 }
 
 function buildTeacherSlotCountMap(
-  slots: Array<{ teacherId: string | null; labTeacherId: string | null; dayId: string; timeSlotId: string }>
+  slots: Array<{ teacherId: string | null; labTeacherId: string | null; notes?: string | null; dayId: string; timeSlotId: string }>
 ) {
   const teacherSlotKeys = new Map<string, Set<string>>();
 
   for (const slot of slots) {
     const key = `${slot.dayId}|${slot.timeSlotId}`;
-    for (const teacherId of [slot.teacherId, slot.labTeacherId]) {
+    for (const teacherId of getAllSlotTeacherIds(slot)) {
       if (!teacherId) continue;
       if (!teacherSlotKeys.has(teacherId)) {
         teacherSlotKeys.set(teacherId, new Set());
@@ -71,8 +72,8 @@ export async function suggestSubstitutes(teacherId: string, dateInput: string | 
   if (!day) return { date, dayName, slots: [] as SuggestedSlot[] };
 
   // Slots belonging to the absent teacher on this day
-  const absentSlots = await db.timetableSlot.findMany({
-    where: { teacherId, dayId: day.id },
+  const absentSlots = (await db.timetableSlot.findMany({
+    where: { dayId: day.id },
     include: {
       section: { include: { grade: true } },
       subject: true,
@@ -82,7 +83,7 @@ export async function suggestSubstitutes(teacherId: string, dateInput: string | 
       room: true,
     },
     orderBy: { timeSlot: { periodNumber: 'asc' } },
-  });
+  })).filter((slot) => slotHasTeacherId(slot, teacherId));
 
   // All teachers that can teach any of those subjects
   const subjectIds = absentSlots.map(s => s.subjectId).filter((v): v is string => !!v);
@@ -102,14 +103,14 @@ export async function suggestSubstitutes(teacherId: string, dateInput: string | 
 
   // Who's busy this day (period × teacher)
   const scheduledSlots = await db.timetableSlot.findMany({
-    select: { teacherId: true, labTeacherId: true, dayId: true, timeSlotId: true },
+    select: { teacherId: true, labTeacherId: true, notes: true, dayId: true, timeSlotId: true },
   });
   const liveTeacherWorkload = buildTeacherSlotCountMap(scheduledSlots);
   const teacherBusy = new Set(
     scheduledSlots
       .filter((slot) => slot.dayId === day.id)
       .flatMap((slot) =>
-        [slot.teacherId, slot.labTeacherId]
+        getAllSlotTeacherIds(slot)
           .filter((busyTeacherId): busyTeacherId is string => Boolean(busyTeacherId))
           .map((busyTeacherId) => `${busyTeacherId}|${slot.timeSlotId}`)
       )

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { TimetableSlotSchema, validationError } from '@/lib/validation';
 import { sortSectionsByGradeThenName } from '@/lib/section-sort';
+import { getAllSlotTeacherIds, slotHasTeacherId } from '@/lib/combined-slot';
 import {
   assertPrimaryTeacherEligibility,
   assertTeacherAvailableForSectionSubjectSlots,
@@ -36,16 +37,10 @@ export async function GET(request: NextRequest) {
 
     if (type === 'teacher' && id) {
       const slots = await db.timetableSlot.findMany({
-        where: {
-          OR: [
-            { teacherId: id },
-            { labTeacherId: id },
-          ],
-        },
         include: { day: true, timeSlot: true, subject: true, teacher: true, labTeacher: true, section: true, room: true },
         orderBy: [{ day: { dayOrder: 'asc' } }, { timeSlot: { periodNumber: 'asc' } }],
       });
-      return NextResponse.json({ slots });
+      return NextResponse.json({ slots: slots.filter((slot) => slotHasTeacherId(slot, id)) });
     }
 
     // Default: return everything needed for the timetable page
@@ -221,13 +216,13 @@ function parseGrades(raw: string | null | undefined): string[] {
 }
 
 function buildTeacherWorkloadMap(
-  slots: Array<{ teacherId: string | null; labTeacherId: string | null; dayId: string; timeSlotId: string }>
+  slots: Array<{ teacherId: string | null; labTeacherId: string | null; notes?: string | null; dayId: string; timeSlotId: string }>
 ) {
   const teacherSlotKeys = new Map<string, Set<string>>();
 
   for (const slot of slots) {
     const key = `${slot.dayId}|${slot.timeSlotId}`;
-    for (const teacherId of [slot.teacherId, slot.labTeacherId]) {
+    for (const teacherId of getAllSlotTeacherIds(slot)) {
       if (!teacherId) continue;
       if (!teacherSlotKeys.has(teacherId)) {
         teacherSlotKeys.set(teacherId, new Set());

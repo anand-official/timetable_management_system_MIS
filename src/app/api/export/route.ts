@@ -10,6 +10,7 @@ import type { TimetableGrid } from '@/lib/export/timetable-grid';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 function schoolSubtitle(schoolName: string | null, academicYear: string | null): string {
   const name = schoolName?.trim() || 'Modern Indian School';

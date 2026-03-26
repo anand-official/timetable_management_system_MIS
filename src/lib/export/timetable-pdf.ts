@@ -2,12 +2,11 @@
  * pdfmake-based PDF generator for class and teacher timetables.
  * Uses only built-in PDF standard fonts (Helvetica) — no font files required.
  *
- * Loads pdfmake via createRequire(process.cwd()) so Next.js / Turbopack never bundles
- * or stubs it (which breaks createPdf / getBuffer and caused persistent 500s).
+ * Keep the import statically analyzable so Next/Vercel traces the package into
+ * the route bundle while `serverExternalPackages` keeps it on the Node side.
  */
 
-import { createRequire } from 'module';
-import path from 'path';
+import * as pdfMakeImport from 'pdfmake';
 import { TimetableGrid, CellData, cellColor } from './timetable-grid';
 
 /** pdfmake rowSpan + omitted columns is fragile; duplicate lab 2nd period as a normal cell. */
@@ -61,11 +60,14 @@ let pdfMakeSingleton: PdfMakeSingleton | null = null;
 
 function loadPdfMake(): PdfMakeSingleton {
   if (pdfMakeSingleton) return pdfMakeSingleton;
-  const requireRoot = createRequire(path.join(process.cwd(), 'package.json'));
-  const mod = requireRoot('pdfmake') as PdfMakeSingleton;
+  const mod = (
+    typeof (pdfMakeImport as { default?: unknown }).default === 'object'
+      ? (pdfMakeImport as { default: unknown }).default
+      : pdfMakeImport
+  ) as PdfMakeSingleton;
   if (typeof mod?.setFonts !== 'function' || typeof mod?.createPdf !== 'function') {
     throw new Error(
-      'pdfmake is not loadable (missing setFonts/createPdf). Is it installed? Try: npm install pdfmake'
+      'pdfmake failed to load (missing setFonts/createPdf). Ensure it is installed and bundled for the server runtime.'
     );
   }
   mod.setUrlAccessPolicy?.(() => false);

@@ -312,12 +312,12 @@ const teachers = [
   { name: 'Mr. Yuson Maharjan', abbreviation: 'YM', department: 'Music', isHOD: false, targetWorkload: 30 },
   { name: 'Mr. Nirajan Tandukar', abbreviation: 'NT', department: 'Music', isHOD: false, targetWorkload: 30 },
   // LAB
-  { name: 'Ms. Ajita Thapaliya', abbreviation: 'AT', department: 'Lab', isHOD: false, targetWorkload: 30 },
-  { name: 'Ms. Deepika Bhandari', abbreviation: 'DB', department: 'Lab', isHOD: false, targetWorkload: 30 },
-  { name: 'Mr. Sudhanshu Kumar Mishra', abbreviation: 'SKM', department: 'Lab', isHOD: false, targetWorkload: 30 },
-  { name: 'Mr. Rajnish Kumar Mishra', abbreviation: 'RKM', department: 'Lab', isHOD: false, targetWorkload: 30 },
-  { name: 'Ms. Alina Maharjan', abbreviation: 'AM', department: 'Lab', isHOD: false, targetWorkload: 30 },
-  { name: 'Mr. Ujjwal Maharjan', abbreviation: 'UM', department: 'Lab', isHOD: false, targetWorkload: 40 },
+  { name: 'Ms. Ajita Thapaliya', abbreviation: 'AT', department: 'Biology Lab', isHOD: false, targetWorkload: 30 },
+  { name: 'Ms. Deepika Bhandari', abbreviation: 'DB', department: 'Biology Lab', isHOD: false, targetWorkload: 30 },
+  { name: 'Mr. Sudhanshu Kumar Mishra', abbreviation: 'SKM', department: 'Physics Lab', isHOD: false, targetWorkload: 30 },
+  { name: 'Mr. Rajnish Kumar Mishra', abbreviation: 'RKM', department: 'Chemistry Lab', isHOD: false, targetWorkload: 30 },
+  { name: 'Ms. Alina Maharjan', abbreviation: 'AM', department: 'Biology Lab', isHOD: false, targetWorkload: 30 },
+  { name: 'Mr. Ujjwal Maharjan', abbreviation: 'UM', department: 'Computer Lab', isHOD: false, targetWorkload: 40 },
   // COUNSELLOR
   { name: 'Dr. Samarpita Shoma Nath', abbreviation: 'SSN', department: 'Counselling', isHOD: false, targetWorkload: 20 },
 ];
@@ -374,9 +374,9 @@ const roomSeeds = [
   { name: 'Biology Lab (IX-X)', subjects: ['Biology'], grades: ['IX', 'X'] },
   { name: 'Biology Lab (XI-XII) A', subjects: ['Biology'], grades: ['XI', 'XII'] },
   { name: 'Biology Lab (XI-XII) B', subjects: ['Biology'], grades: ['XI', 'XII'] },
-  { name: 'CS Lab 1', subjects: ['Computer Science', 'IP'], grades: null },
-  { name: 'CS Lab 2', subjects: ['Computer Science', 'IP'], grades: null },
-  { name: 'CS Lab 3', subjects: ['Computer Science', 'IP'], grades: null },
+  { name: 'Computer Lab 1', subjects: ['Computer Science', 'IP'], grades: null },
+  { name: 'Computer Lab 2', subjects: ['Computer Science', 'IP'], grades: null },
+  { name: 'Computer Lab 3', subjects: ['Computer Science', 'IP'], grades: null },
 ];
 
 async function main() {

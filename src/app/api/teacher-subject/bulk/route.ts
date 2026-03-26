@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import {
+  getExpectedLabDepartment,
+  isLabDepartment,
+  matchesLabDepartmentForSubject,
+} from '@/lib/teacher-departments';
 import { BulkImportSchema, validationError } from '@/lib/validation';
 import { sortSectionsByGradeThenName } from '@/lib/section-sort';
+import {
+  assertPrimaryTeacherEligibility,
+  assertTeacherAvailableForSectionSubjectSlots,
+  syncPrimaryTeacherForSectionSubject,
+} from '@/lib/section-subject-sync';
 
 // ── Types ───────────────────────────────────────────────────────────────────────
 
@@ -33,7 +43,7 @@ export async function POST(request: NextRequest) {
 
   // ── Build lookup maps (name/abbr → id) — one DB round-trip each ─────────────
   const [teachers, subjects, sectionsRaw] = await Promise.all([
-    db.teacher.findMany({ select: { id: true, name: true, abbreviation: true } }),
+    db.teacher.findMany({ select: { id: true, name: true, abbreviation: true, department: true } }),
     db.subject.findMany({ select: { id: true, name: true, code: true } }),
     db.section.findMany({ select: { id: true, name: true, grade: { select: { name: true } } } }),
   ]);
@@ -69,6 +79,14 @@ export async function POST(request: NextRequest) {
     const subjectKey = row.subject.toLowerCase();
     const subject    = subjectByName.get(subjectKey) ?? subjectByCode.get(subjectKey);
     if (!subject) errs.push(`Subject "${row.subject}" not found`);
+    if (row.isLabAssignment && teacher && subject && !matchesLabDepartmentForSubject(teacher.department, subject.name)) {
+      const expectedDepartment = getExpectedLabDepartment(subject.name);
+      errs.push(
+        expectedDepartment
+          ? `Teacher "${row.teacher}" must be in the ${expectedDepartment} department for ${subject.name} lab assignments`
+          : `Teacher "${row.teacher}" must be in a lab assignment department for ${subject.name}`
+      );
+    }
 
     // Section lookup
     const sectionKey = row.section.toLowerCase();
@@ -98,34 +116,59 @@ export async function POST(request: NextRequest) {
 
   for (const v of valid) {
     try {
-      // Check if the record already exists to determine created vs updated
-      const existing = await db.teacherSubject.findUnique({
+      const existingAssignments = await db.teacherSubject.findMany({
         where: {
-          teacherId_subjectId_sectionId: {
-            teacherId: v.teacherId,
-            subjectId: v.subjectId,
-            sectionId: v.sectionId,
+          sectionId: v.sectionId,
+          subjectId: v.subjectId,
+        },
+        include: {
+          teacher: {
+            select: {
+              department: true,
+            },
           },
         },
       });
+      const existingPrimary = existingAssignments.find((assignment) => !assignment.isLabAssignment);
+      const exactExisting = existingAssignments.find((assignment) => assignment.teacherId === v.teacherId);
 
-      await db.teacherSubject.upsert({
-        where: {
-          teacherId_subjectId_sectionId: {
-            teacherId: v.teacherId,
-            subjectId: v.subjectId,
-            sectionId: v.sectionId,
+      if (v.isLabAssignment) {
+        await db.teacherSubject.upsert({
+          where: {
+            teacherId_subjectId_sectionId: {
+              teacherId: v.teacherId,
+              subjectId: v.subjectId,
+              sectionId: v.sectionId,
+            },
           },
-        },
-        update: { periodsPerWeek: v.periodsPerWeek, isLabAssignment: v.isLabAssignment },
-        create: {
-          teacherId:       v.teacherId,
-          subjectId:       v.subjectId,
-          sectionId:       v.sectionId,
-          periodsPerWeek:  v.periodsPerWeek,
-          isLabAssignment: v.isLabAssignment,
-        },
-      });
+          update: { periodsPerWeek: v.periodsPerWeek, isLabAssignment: true },
+          create: {
+            teacherId:       v.teacherId,
+            subjectId:       v.subjectId,
+            sectionId:       v.sectionId,
+            periodsPerWeek:  v.periodsPerWeek,
+            isLabAssignment: true,
+          },
+        });
+      } else {
+        await assertPrimaryTeacherEligibility(db, v.sectionId, v.subjectId, v.teacherId);
+        await assertTeacherAvailableForSectionSubjectSlots(db, {
+          sectionId: v.sectionId,
+          subjectId: v.subjectId,
+          teacherId: v.teacherId,
+        });
+
+        await db.$transaction(async (tx) => {
+          await syncPrimaryTeacherForSectionSubject(tx, {
+            sectionId: v.sectionId,
+            subjectId: v.subjectId,
+            teacherId: v.teacherId,
+            periodsPerWeek: v.periodsPerWeek,
+            isLabAssignment: false,
+            syncTimetable: true,
+          });
+        });
+      }
 
       successes.push({
         row:     v.rowIndex,
@@ -133,7 +176,7 @@ export async function POST(request: NextRequest) {
         subject: v.subjectName,
         section: v.sectionName,
         periods: v.periodsPerWeek,
-        action:  existing ? 'updated' : 'created',
+        action:  existingPrimary || exactExisting ? 'updated' : 'created',
       });
     } catch (err) {
       errors.push({

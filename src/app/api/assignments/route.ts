@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { sortSectionsByGradeThenName } from '@/lib/section-sort';
+import {
+  assertPrimaryTeacherEligibility,
+  assertTeacherAvailableForSectionSubjectSlots,
+  syncPrimaryTeacherForSectionSubject,
+} from '@/lib/section-subject-sync';
 
 // GET /api/assignments?grade=IX
 // Returns all TeacherSubject assignments grouped by section, with teacher + subject info
@@ -28,7 +33,7 @@ export async function GET(request: NextRequest) {
     }),
     db.subject.findMany({ orderBy: { name: 'asc' } }),
     db.teacher.findMany({
-      select: { id: true, name: true, abbreviation: true, department: true, targetWorkload: true, teachableGrades: true },
+      select: { id: true, name: true, abbreviation: true, department: true, targetWorkload: true, teachableGrades: true, isActive: true },
       orderBy: { name: 'asc' },
     }),
   ]);
@@ -76,12 +81,21 @@ export async function GET(request: NextRequest) {
     subjects,
     teachers: teachers.map(t => ({
       ...t,
-      teachableGrades: JSON.parse(t.teachableGrades || '[]'),
+      teachableGrades: parseGrades(t.teachableGrades),
       assignedPeriods: teacherWorkloadMap[t.id] || 0,
     })),
     coverageMap,
     gradeSubjects,
   });
+}
+
+function parseGrades(raw: string | null | undefined): string[] {
+  try {
+    const parsed = JSON.parse(raw ?? '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 // PATCH /api/assignments — change a teacher on an assignment
@@ -92,18 +106,78 @@ export async function PATCH(request: NextRequest) {
     if (!assignmentId || !newTeacherId) {
       return NextResponse.json({ error: 'assignmentId and newTeacherId required' }, { status: 400 });
     }
-    const updated = await db.teacherSubject.update({
+
+    const currentAssignment = await db.teacherSubject.findUnique({
       where: { id: assignmentId },
-      data: { teacherId: newTeacherId },
-      include: {
-        teacher: { select: { id: true, name: true, abbreviation: true, department: true } },
-        subject: { select: { id: true, name: true } },
-        section: { select: { id: true, name: true } },
+      select: {
+        id: true,
+        sectionId: true,
+        subjectId: true,
+        periodsPerWeek: true,
+        isLabAssignment: true,
       },
     });
-    return NextResponse.json({ assignment: updated });
+
+    if (!currentAssignment) {
+      return NextResponse.json({ error: 'Assignment not found' }, { status: 404 });
+    }
+
+    await assertPrimaryTeacherEligibility(
+      db,
+      currentAssignment.sectionId,
+      currentAssignment.subjectId,
+      newTeacherId
+    );
+    await assertTeacherAvailableForSectionSubjectSlots(db, {
+      sectionId: currentAssignment.sectionId,
+      subjectId: currentAssignment.subjectId,
+      teacherId: newTeacherId,
+    });
+
+    const result = await db.$transaction(async (tx) => {
+      const syncResult = await syncPrimaryTeacherForSectionSubject(tx, {
+        sectionId: currentAssignment.sectionId,
+        subjectId: currentAssignment.subjectId,
+        teacherId: newTeacherId,
+        periodsPerWeek: currentAssignment.periodsPerWeek,
+        isLabAssignment: currentAssignment.isLabAssignment,
+        syncTimetable: true,
+      });
+
+      const assignment = syncResult.assignmentId
+        ? await tx.teacherSubject.findUnique({
+            where: { id: syncResult.assignmentId },
+            include: {
+              teacher: { select: { id: true, name: true, abbreviation: true, department: true } },
+              subject: { select: { id: true, name: true } },
+              section: { select: { id: true, name: true } },
+            },
+          })
+        : null;
+
+      return {
+        assignment,
+        syncedSlots: syncResult.syncedSlots,
+      };
+    });
+
+    return NextResponse.json({
+      assignment: result.assignment,
+      syncedSlots: result.syncedSlots,
+      message:
+        result.syncedSlots > 0
+          ? `Teacher updated and synced across ${result.syncedSlots} timetable ${result.syncedSlots === 1 ? 'slot' : 'slots'}`
+          : 'Assignment updated',
+    });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const status =
+      typeof err?.message === 'string' &&
+      (err.message.includes('not eligible') ||
+        err.message.includes('not found') ||
+        err.message.includes('clash'))
+        ? 400
+        : 500;
+    return NextResponse.json({ error: err.message }, { status });
   }
 }
 
@@ -115,20 +189,57 @@ export async function POST(request: NextRequest) {
     if (!teacherId || !subjectId || !sectionId || !periodsPerWeek) {
       return NextResponse.json({ error: 'teacherId, subjectId, sectionId, periodsPerWeek required' }, { status: 400 });
     }
-    const assignment = await db.teacherSubject.create({
-      data: { teacherId, subjectId, sectionId, periodsPerWeek: Number(periodsPerWeek) },
-      include: {
-        teacher: { select: { id: true, name: true, abbreviation: true } },
-        subject: { select: { id: true, name: true } },
-        section: { select: { id: true, name: true } },
-      },
+    await assertPrimaryTeacherEligibility(db, sectionId, subjectId, teacherId);
+    await assertTeacherAvailableForSectionSubjectSlots(db, {
+      sectionId,
+      subjectId,
+      teacherId,
     });
-    return NextResponse.json({ assignment });
+
+    const result = await db.$transaction(async (tx) => {
+      const syncResult = await syncPrimaryTeacherForSectionSubject(tx, {
+        sectionId,
+        subjectId,
+        teacherId,
+        periodsPerWeek: Number(periodsPerWeek),
+        isLabAssignment: false,
+        syncTimetable: true,
+      });
+
+      const assignment = syncResult.assignmentId
+        ? await tx.teacherSubject.findUnique({
+            where: { id: syncResult.assignmentId },
+            include: {
+              teacher: { select: { id: true, name: true, abbreviation: true } },
+              subject: { select: { id: true, name: true } },
+              section: { select: { id: true, name: true } },
+            },
+          })
+        : null;
+
+      return {
+        assignment,
+        syncedSlots: syncResult.syncedSlots,
+      };
+    });
+
+    return NextResponse.json({
+      assignment: result.assignment,
+      syncedSlots: result.syncedSlots,
+      message:
+        result.syncedSlots > 0
+          ? `Assignment saved and synced across ${result.syncedSlots} timetable ${result.syncedSlots === 1 ? 'slot' : 'slots'}`
+          : 'Assignment saved',
+    });
   } catch (err: any) {
-    if (err.code === 'P2002') {
-      return NextResponse.json({ error: 'Assignment already exists for this teacher-subject-section combination' }, { status: 409 });
-    }
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const status =
+      typeof err?.message === 'string' &&
+      (err.message.includes('not eligible') ||
+        err.message.includes('not found') ||
+        err.message.includes('clash'))
+        ? 400
+        : 500;
+    return NextResponse.json({ error: err.message }, { status });
   }
 }
 

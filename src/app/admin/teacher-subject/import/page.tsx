@@ -20,12 +20,17 @@ import {
   Plus, Download, RefreshCw, ArrowLeft, BookOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  getExpectedLabDepartment,
+  matchesLabDepartmentForSubject,
+} from '@/lib/teacher-departments';
+import { getEligibleTeachersForSectionSubject } from '@/lib/teacher-eligibility';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface Teacher { id: string; name: string; abbreviation: string; department: string }
-interface Subject { id: string; name: string; code: string }
-interface Section { id: string; name: string }
+interface Teacher { id: string; name: string; abbreviation: string; department: string; teachableGrades?: string[]; isActive?: boolean }
+interface Subject { id: string; name: string; code: string; category: string }
+interface Section { id: string; name: string; grade: { name: string } }
 
 interface ParsedRow {
   /** 1-based row number in the uploaded file */
@@ -159,6 +164,29 @@ export default function TeacherSubjectImportPage() {
       .catch(() => toast.error('Failed to load reference data'))
       .finally(() => setLoadingRef(false));
   }, []);
+
+  const manualSectionRecord = sections.find((section) => section.id === manualSection);
+  const manualSubjectRecord = subjects.find((subject) => subject.id === manualSubject);
+  const eligibleManualTeachers = getEligibleTeachersForSectionSubject(
+    teachers,
+    manualSubjectRecord,
+    manualSectionRecord?.grade.name
+  );
+  const expectedManualLabDepartment = getExpectedLabDepartment(manualSubjectRecord?.name);
+  const labManualTeachers = teachers.filter((teacher) =>
+    matchesLabDepartmentForSubject(teacher.department, manualSubjectRecord?.name)
+  );
+
+  useEffect(() => {
+    if (!manualTeacher) return;
+    if (manualIsLab) {
+      if (labManualTeachers.some((teacher) => teacher.id === manualTeacher)) return;
+      setManualTeacher('');
+      return;
+    }
+    if (eligibleManualTeachers.some((teacher) => teacher.id === manualTeacher)) return;
+    setManualTeacher('');
+  }, [manualTeacher, manualIsLab, eligibleManualTeachers, labManualTeachers]);
 
   const loadAssignments = useCallback(async () => {
     setLoadingList(true);
@@ -608,18 +636,32 @@ export default function TeacherSubjectImportPage() {
                   {/* Teacher */}
                   <div className="space-y-1.5">
                     <Label htmlFor="m-teacher">Teacher</Label>
-                    <Select value={manualTeacher} onValueChange={setManualTeacher} disabled={loadingRef}>
+                    <Select
+                      value={manualTeacher}
+                      onValueChange={setManualTeacher}
+                      disabled={loadingRef || !manualSubject || (!manualIsLab && !manualSection)}
+                    >
                       <SelectTrigger id="m-teacher">
                         <SelectValue placeholder="Select teacher…" />
                       </SelectTrigger>
                       <SelectContent>
-                        {[...teachers].sort((a, b) => a.name.localeCompare(b.name)).map(t => (
+                        {[...(manualIsLab ? labManualTeachers : eligibleManualTeachers)].sort((a, b) => a.name.localeCompare(b.name)).map(t => (
                           <SelectItem key={t.id} value={t.id}>
                             {t.name} <span className="text-muted-foreground">({t.abbreviation})</span>
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {manualIsLab && labManualTeachers.length === 0 && (
+                      <p className="text-xs text-amber-600">
+                        {expectedManualLabDepartment
+                          ? `No teachers in the ${expectedManualLabDepartment} department are available.`
+                          : 'No lab teachers are available for this subject.'}
+                      </p>
+                    )}
+                    {!manualIsLab && manualSubject && manualSection && eligibleManualTeachers.length === 0 && (
+                      <p className="text-xs text-amber-600">No eligible teachers found for this section and subject.</p>
+                    )}
                   </div>
 
                   {/* Subject */}

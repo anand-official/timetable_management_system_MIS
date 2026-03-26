@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AUTH_COOKIE_NAME, verifyAuthSessionValue } from '@/lib/auth-session';
 
 // ── Security headers ───────────────────────────────────────────────────────────
 const SECURITY_HEADERS: Record<string, string> = {
@@ -9,7 +10,6 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
 };
 
-const AUTH_COOKIE_NAME = 'mis-access';
 const PUBLIC_PATH_PREFIXES = ['/auth', '/api/auth'];
 
 function applySecurityHeaders(response: NextResponse) {
@@ -28,7 +28,7 @@ function isAuthEnabled() {
 
 // ── Middleware ─────────────────────────────────────────────────────────────────
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   if (!isAuthEnabled()) {
@@ -43,7 +43,9 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  const hasValidSession = request.cookies.get(AUTH_COOKIE_NAME)?.value === 'granted';
+  const hasValidSession = await verifyAuthSessionValue(
+    request.cookies.get(AUTH_COOKIE_NAME)?.value
+  );
   if (!hasValidSession) {
     if (pathname.startsWith('/api/')) {
       const unauthorizedResponse = NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

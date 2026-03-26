@@ -13,6 +13,8 @@ import {
 import { toast } from 'sonner';
 import { Users, BookOpen, ChevronLeft, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
+import { isLabDepartment } from '@/lib/teacher-departments';
+import { getEligibleTeachersForSectionSubject } from '@/lib/teacher-eligibility';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +23,7 @@ interface Teacher {
   name: string;
   abbreviation: string;
   department: string;
+  isActive?: boolean;
   targetWorkload: number;
   assignedPeriods: number;
   teachableGrades: string[];
@@ -175,7 +178,7 @@ export default function AssignmentsPage() {
       if (dept === 'sports' && subName === 'games') return true;
       if (dept === 'yoga' && (subName === 'yoga' || subName === 'aerobics')) return true;
       if (dept === 'library' && subName === 'library') return true;
-      if (dept === 'lab') return false; // lab assistants don't get assigned
+      if (isLabDepartment(t.department)) return false; // lab assistants don't get assigned
       if (dept === 'counselling') return false;
       if (subj.category === 'Activity') {
         return ['art', 'dance', 'music', 'sports', 'yoga', 'library'].includes(dept) ||
@@ -199,6 +202,16 @@ export default function AssignmentsPage() {
       return false;
     });
   };
+
+  const editGrade = editSection?.grade.name ?? editAssignment?.section.grade.name;
+  const editSubject = subjects.find((subject) => subject.id === editSubjectId);
+  const editEligibleTeachers = getEligibleTeachersForSectionSubject(teachers, editSubject, editGrade);
+
+  useEffect(() => {
+    if (!editOpen || !newTeacherId) return;
+    if (editEligibleTeachers.some((teacher) => teacher.id === newTeacherId)) return;
+    setNewTeacherId('');
+  }, [editOpen, newTeacherId, editEligibleTeachers]);
 
   const openEdit = (assignment?: Assignment, subjectId?: string, subjectName?: string) => {
     setEditAssignment(assignment);
@@ -229,8 +242,9 @@ export default function AssignmentsPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ assignmentId: editAssignment.id, newTeacherId }),
         });
-        if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
-        toast.success('Assignment updated');
+        const data = await res.json();
+        if (!res.ok) { throw new Error(data.error); }
+        toast.success(data.message || 'Assignment updated');
       }
       setEditOpen(false);
       load();
@@ -249,63 +263,68 @@ export default function AssignmentsPage() {
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-white p-4 md:p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-violet-50/10 p-4 md:p-6">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Link href="/">
-            <Button variant="ghost" size="sm" className="text-slate-500 hover:text-indigo-600">
-              <ChevronLeft className="h-4 w-4 mr-1" /> Back
+            <Button variant="ghost" size="sm" className="text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg gap-1">
+              <ChevronLeft className="h-4 w-4" /> Back
             </Button>
           </Link>
+          <div className="h-8 w-px bg-slate-200" />
           <div>
             <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <Users className="h-5 w-5 text-indigo-600" /> Teacher Assignments
+              <div className="h-7 w-7 rounded-lg flex items-center justify-center stat-icon-blue shadow-md shadow-blue-100">
+                <Users className="h-3.5 w-3.5 text-white" />
+              </div>
+              Teacher Assignments
             </h1>
             <p className="text-sm text-slate-500 mt-0.5">One teacher per section per subject — the backbone of timetable generation</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+          <Button variant="outline" size="sm" onClick={load} disabled={loading} className="rounded-lg border-slate-200 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 gap-1.5">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </div>
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 stagger-children">
         {[
-          { label: 'Assignments', value: totalAssignments, icon: BookOpen, colour: 'text-indigo-600' },
-          { label: 'Periods/week', value: totalPeriods, icon: CheckCircle2, colour: 'text-emerald-600' },
-          { label: 'Teachers involved', value: new Set(assignments.map(a => a.teacherId)).size, icon: Users, colour: 'text-sky-600' },
-          { label: 'Overloaded teachers', value: overloaded, icon: AlertTriangle, colour: overloaded ? 'text-red-600' : 'text-slate-400' },
+          { label: 'Assignments', value: totalAssignments, icon: BookOpen, iconClass: 'stat-icon-blue', shadow: 'shadow-blue-100' },
+          { label: 'Periods/week', value: totalPeriods, icon: CheckCircle2, iconClass: 'stat-icon-emerald', shadow: 'shadow-emerald-100' },
+          { label: 'Teachers involved', value: new Set(assignments.map(a => a.teacherId)).size, icon: Users, iconClass: 'stat-icon-sky', shadow: 'shadow-sky-100' },
+          { label: 'Overloaded teachers', value: overloaded, icon: AlertTriangle, iconClass: overloaded ? 'stat-icon-rose' : 'stat-icon-teal', shadow: overloaded ? 'shadow-rose-100' : 'shadow-teal-100' },
         ].map(stat => (
-          <Card key={stat.label} className="border-0 shadow-sm bg-white/80">
-            <CardContent className="p-4 flex items-center gap-3">
-              <stat.icon className={`h-5 w-5 ${stat.colour}`} />
-              <div>
-                <div className="text-xl font-bold text-slate-900">{stat.value}</div>
-                <div className="text-xs text-slate-500">{stat.label}</div>
-              </div>
-            </CardContent>
-          </Card>
+          <div key={stat.label} className="bg-white rounded-2xl p-4 card-shadow card-interactive animate-fade-in-up flex items-center gap-3">
+            <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${stat.iconClass} shadow-md ${stat.shadow} shrink-0`}>
+              <stat.icon className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-slate-900 leading-none">{stat.value}</div>
+              <div className="text-xs text-slate-500 mt-0.5">{stat.label}</div>
+            </div>
+          </div>
         ))}
       </div>
 
       {/* Grade selector */}
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-sm font-medium text-slate-600">Grade:</span>
-        <div className="flex gap-1 flex-wrap">
+      <div className="flex items-center gap-2.5 mb-4">
+        <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Grade:</span>
+        <div className="flex gap-1.5 flex-wrap">
           {GRADES.map(g => (
             <button
               key={g}
               onClick={() => setSelectedGrade(g)}
-              className={`px-3 py-1 rounded-full text-sm font-medium transition ${
+              className={`px-3.5 py-1.5 rounded-xl text-sm font-semibold transition-all duration-150 ${
                 selectedGrade === g
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'bg-white text-slate-600 hover:bg-indigo-50 border border-slate-200'
+                  ? 'text-white shadow-md shadow-indigo-200'
+                  : 'bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-200 hover:border-indigo-200'
               }`}
+              style={selectedGrade === g ? { background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' } : undefined}
             >
               {g}
             </button>
@@ -314,8 +333,8 @@ export default function AssignmentsPage() {
       </div>
 
       {/* Assignment matrix */}
-      <Card className="border-0 shadow-sm overflow-hidden bg-white">
-        <CardHeader className="py-3 px-4 border-b bg-slate-50/80">
+      <Card className="border-0 card-shadow overflow-hidden bg-white rounded-2xl">
+        <CardHeader className="py-3.5 px-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-indigo-50/30">
           <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-indigo-500" />
             Grade {selectedGrade} — Assignment Matrix
@@ -459,12 +478,12 @@ export default function AssignmentsPage() {
               <label className="text-xs font-medium text-slate-600 mb-1.5 block">
                 {editAssignment ? 'Replace with:' : 'Assign teacher:'}
               </label>
-              <Select value={newTeacherId} onValueChange={setNewTeacherId}>
+              <Select value={newTeacherId} onValueChange={setNewTeacherId} disabled={!editSubjectId}>
                 <SelectTrigger className="text-sm">
                   <SelectValue placeholder="Select teacher…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {eligibleTeachers(editSubjectId).map(t => {
+                  {editEligibleTeachers.map(t => {
                     const pct = t.targetWorkload > 0 ? Math.round((t.assignedPeriods / t.targetWorkload) * 100) : 0;
                     return (
                       <SelectItem key={t.id} value={t.id}>
@@ -478,6 +497,9 @@ export default function AssignmentsPage() {
                   })}
                 </SelectContent>
               </Select>
+              {editSubjectId && editEligibleTeachers.length === 0 && (
+                <p className="mt-1.5 text-xs text-amber-600">No eligible teachers found for this section and subject.</p>
+              )}
             </div>
           </div>
           <DialogFooter>

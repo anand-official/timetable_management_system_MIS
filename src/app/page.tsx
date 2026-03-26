@@ -32,9 +32,14 @@ import {
   CheckCircle, Clock, GraduationCap, RefreshCw, FileSpreadsheet, FileText,
   Plus, Trash2, Edit, Search, BarChart3, Wrench, Lock, Unlock,
   TrendingUp, TrendingDown, Sparkles, Activity, Shield, Zap,
-  ChevronRight, ChevronDown, Settings2, BookMarked, Award, Settings
+  ChevronRight, ChevronDown, Settings2, BookMarked, Award, Settings,
+  Moon, Sun, Menu, X, ChevronLeft
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { motion, AnimatePresence } from 'framer-motion';
+import { DEFAULT_TEACHER_DEPARTMENTS } from '@/lib/teacher-departments';
+import { getEligibleTeachersForSectionSubject } from '@/lib/teacher-eligibility';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 // Types
 interface Teacher {
@@ -42,6 +47,7 @@ interface Teacher {
   name: string;
   abbreviation: string;
   department: string;
+  isActive?: boolean;
   isHOD: boolean;
   targetWorkload: number;
   currentWorkload: number;
@@ -85,8 +91,10 @@ interface TimetableSlot {
   timeSlotId: string;
   subjectId?: string;
   teacherId?: string;
+  labTeacherId?: string | null;
   subject?: Subject;
   teacher?: Teacher;
+  labTeacher?: Teacher | null;
   section?: Section;
   room?: { id: string; name: string } | null;
   day: Day;
@@ -96,6 +104,7 @@ interface TimetableSlot {
   isGames: boolean;
   isYoga: boolean;
   isLibrary: boolean;
+  isWE: boolean;
   isFiller?: boolean;
   manuallyEdited?: boolean;
 }
@@ -126,6 +135,7 @@ interface PreviewSlotPayload {
   timeSlotId: string;
   subjectId: string;
   teacherId: string;
+  labTeacherId?: string | null;
   roomId?: string | null;
   isLab?: boolean;
   isGames?: boolean;
@@ -180,7 +190,11 @@ interface LabRepairChange {
 
 export default function TimetableManagementSystem() {
   // State
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [darkMode, setDarkMode] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sections, setSections] = useState<Section[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -249,6 +263,7 @@ export default function TimetableManagementSystem() {
   const [allowDuplicateActivities, setAllowDuplicateActivities] = useState(true);
   const [studyPeriodTeacherPool, setStudyPeriodTeacherPool] = useState<string[]>([]);
   const [savingSettings, setSavingSettings] = useState(false);
+  const sidebarCompact = sidebarCollapsed && !isMobile;
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -362,6 +377,22 @@ export default function TimetableManagementSystem() {
       setLabAuditLoading(false);
     }
   }, []);
+
+  // Dark mode — read from localStorage on mount, then apply on change
+  useEffect(() => {
+    const stored = localStorage.getItem('darkMode');
+    if (stored === 'true') setDarkMode(true);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('darkMode', String(darkMode));
+  }, [darkMode]);
+
+  // Close mobile sidebar on tab switch
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [activeTab]);
 
   useEffect(() => {
     fetchData();
@@ -480,6 +511,7 @@ export default function TimetableManagementSystem() {
           const changed =
             current.subjectId !== preview.subjectId ||
             current.teacherId !== preview.teacherId ||
+            (current.labTeacherId ?? null) !== (preview.labTeacherId ?? null) ||
             (current.room?.id ?? null) !== (preview.roomId ?? null);
           if (changed) {
             diffs.push({
@@ -540,6 +572,7 @@ export default function TimetableManagementSystem() {
           type: row.type,
           subjectId: preview.subjectId,
           teacherId: preview.teacherId,
+          labTeacherId: preview.labTeacherId ?? null,
           roomId: preview.roomId ?? null,
           isLab: preview.isLab,
           isGames: preview.isGames,
@@ -574,16 +607,24 @@ export default function TimetableManagementSystem() {
     }
   };
 
-  const handleToggleSlotLock = async (slotId: string) => {
+  const handleToggleSlotLock = async (slot: Pick<TimetableSlot, 'id' | 'sectionId' | 'dayId' | 'timeSlotId'>) => {
     try {
-      const response = await fetch(`/api/timetable/${slotId}/lock`, { method: 'PATCH' });
+      const response = await fetch(`/api/timetable/${slot.id}/lock`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sectionId: slot.sectionId,
+          dayId: slot.dayId,
+          timeSlotId: slot.timeSlotId,
+        }),
+      });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`);
       toast.success(data.slot?.manuallyEdited ? 'Slot locked' : 'Slot unlocked');
       fetchData();
     } catch (error) {
       console.error('Error toggling slot lock:', error);
-      toast.error('Failed to toggle slot lock');
+      toast.error(error instanceof Error ? error.message : 'Failed to toggle slot lock');
     }
   };
 
@@ -640,7 +681,7 @@ export default function TimetableManagementSystem() {
       const data = await response.json();
       
       if (data.slot) {
-        toast.success('Slot updated');
+        toast.success(data.message || 'Slot updated');
         fetchData();
         setEditDialogOpen(false);
         setEditingSlot({});
@@ -787,6 +828,35 @@ export default function TimetableManagementSystem() {
 
   // Get unique departments
   const departments = [...new Set(teachers.map(t => t.department))].sort();
+  const teacherDepartmentOptions = [...new Set([...DEFAULT_TEACHER_DEPARTMENTS, ...departments])].sort((a, b) =>
+    a.localeCompare(b)
+  );
+  const editingSection = sections.find((section) => section.id === editingSlot.sectionId);
+  const editingSubject = subjects.find((subject) => subject.id === editingSlot.subjectId);
+  const eligibleTeachersForEditingSlot = getEligibleTeachersForSectionSubject(
+    teachers,
+    editingSubject,
+    editingSection?.grade.name
+  );
+  const sectionSubjectSlotCount =
+    editingSlot.sectionId && editingSlot.subjectId
+      ? slots.filter(
+          (slot) => slot.sectionId === editingSlot.sectionId && slot.subjectId === editingSlot.subjectId
+        ).length
+      : 0;
+
+  useEffect(() => {
+    if (!editDialogOpen || !editingSlot.teacherId) return;
+    if (!editingSubject || !editingSection) return;
+    if (eligibleTeachersForEditingSlot.some((teacher) => teacher.id === editingSlot.teacherId)) return;
+    setEditingSlot((prev) => ({ ...prev, teacherId: undefined }));
+  }, [
+    editDialogOpen,
+    editingSlot.teacherId,
+    editingSection,
+    editingSubject,
+    eligibleTeachersForEditingSlot,
+  ]);
 
   const triggerBlobDownload = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
@@ -975,13 +1045,33 @@ export default function TimetableManagementSystem() {
 
   // Get timetable grid for a teacher
   const getTeacherTimetable = (teacherId: string) => {
-    return slots.filter(s => s.teacherId === teacherId);
+    return slots.filter(s => s.teacherId === teacherId || s.labTeacherId === teacherId);
   };
 
   // Get slot for specific day/period
   const getSlot = (sectionSlots: TimetableSlot[], dayId: string, timeSlotId: string) => {
     return sectionSlots.find(s => s.dayId === dayId && s.timeSlotId === timeSlotId);
   };
+
+  const getDisplayedSubject = (slot: TimetableSlot) => {
+    if (slot.isWE) {
+      return { code: 'W.E.', name: 'Work Experience' };
+    }
+    return {
+      code: slot.subject?.code || slot.subject?.name || '—',
+      name: slot.subject?.name || slot.subject?.code || '—',
+    };
+  };
+
+  const getSlotTeacherAbbreviation = (slot: Partial<Pick<TimetableSlot, 'teacher' | 'labTeacher'>>) =>
+    [slot.teacher?.abbreviation, slot.labTeacher?.abbreviation]
+      .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index)
+      .join(' + ');
+
+  const getSlotTeacherNames = (slot: Partial<Pick<TimetableSlot, 'teacher' | 'labTeacher'>>) =>
+    [slot.teacher?.name, slot.labTeacher?.name]
+      .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index)
+      .join(' + ');
 
   // Status badge color
   const getStatusColor = (status: string) => {
@@ -1001,6 +1091,7 @@ export default function TimetableManagementSystem() {
     if (slot.isYoga) return 'slot-yoga';
     if (slot.isLibrary) return 'slot-library';
     if (slot.isInnovation) return 'slot-innovation';
+    if (slot.isWE) return 'slot-we';
     if ((slot as any).isMusic) return 'slot-music';
     if ((slot as any).isArt) return 'slot-art';
     return 'slot-regular';
@@ -1013,6 +1104,7 @@ export default function TimetableManagementSystem() {
     if (slot.isYoga) return { label: 'YOGA', color: 'text-violet-600' };
     if (slot.isLibrary) return { label: 'LIB', color: 'text-amber-600' };
     if (slot.isInnovation) return { label: 'INNOV', color: 'text-teal-600' };
+    if (slot.isWE) return { label: 'W.E.', color: 'text-pink-600' };
     if ((slot as any).isMusic) return { label: 'MUSIC', color: 'text-pink-600' };
     if ((slot as any).isArt) return { label: 'ART', color: 'text-rose-600' };
     return null;
@@ -1044,25 +1136,29 @@ export default function TimetableManagementSystem() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-violet-50">
-        <div className="text-center space-y-6 animate-scale-in">
-          <div className="relative mx-auto w-20 h-20">
-            <div className="absolute inset-0 rounded-full border-4 border-indigo-100 animate-pulse" />
+      <div className="min-h-screen flex items-center justify-center bg-mesh-purple">
+        <div className="absolute inset-0 bg-dot-grid opacity-30 pointer-events-none" />
+        <div className="relative text-center space-y-6 animate-scale-in">
+          <div className="relative mx-auto w-24 h-24">
+            <div className="absolute inset-0 rounded-full border-4 border-indigo-100" style={{ animation: 'pulse-ring 2s ease-in-out infinite' }} />
             <div className="absolute inset-0 rounded-full border-4 border-t-indigo-500 border-r-transparent border-b-transparent border-l-transparent animate-spin" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <GraduationCap className="h-8 w-8 text-indigo-600" />
+            <div
+              className="absolute inset-3 rounded-full flex items-center justify-center shadow-lg shadow-indigo-200"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+            >
+              <GraduationCap className="h-8 w-8 text-white" />
             </div>
           </div>
           <div>
-            <p className="text-lg font-semibold text-slate-800">Loading Timetable</p>
-            <p className="text-sm text-slate-500 mt-1">Preparing your schedule data…</p>
+            <p className="text-lg font-bold text-slate-900 tracking-tight">Loading Timetable</p>
+            <p className="text-sm text-slate-500 mt-1.5">Preparing your schedule data…</p>
           </div>
-          <div className="flex gap-1.5 justify-center">
+          <div className="flex gap-2 justify-center">
             {[0, 1, 2].map(i => (
               <div
                 key={i}
                 className="h-2 w-2 rounded-full bg-indigo-400"
-                style={{ animation: 'bounce-dot 1.4s infinite', animationDelay: `${i * 0.2}s` }}
+                style={{ animation: 'bounce-dot 1.4s ease-in-out infinite', animationDelay: `${i * 0.22}s` }}
               />
             ))}
           </div>
@@ -1082,147 +1178,251 @@ export default function TimetableManagementSystem() {
   };
 
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-slate-50 via-indigo-50/20 to-violet-50/10">
+    <div className="min-h-screen flex bg-gradient-to-br from-slate-50 via-indigo-50/20 to-violet-50/10 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900">
+
+      {/* ── Mobile sidebar backdrop ── */}
+      <AnimatePresence>
+        {mobileSidebarOpen && (
+          <motion.div
+            key="backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ── Sidebar ── */}
-      <aside className="w-60 fixed inset-y-0 left-0 z-50 flex flex-col bg-white border-r border-slate-200 shadow-sm">
-        {/* Branding */}
-        <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-100">
-          <div className="h-9 w-9 flex items-center justify-center rounded-lg bg-white border border-slate-100 shadow-sm shrink-0 overflow-hidden">
+      <aside className={`fixed inset-y-0 left-0 z-50 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 shadow-[2px_0_24px_0_rgba(99,102,241,0.07)] transition-[width] duration-300 ease-in-out lg:translate-x-0 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${sidebarCompact ? 'w-[68px]' : 'w-60'}`}>
+
+        {/* ── Floating collapse toggle (desktop only) ── */}
+        <button
+          onClick={() => setSidebarCollapsed(c => !c)}
+          className="hidden lg:flex absolute -right-3 top-16 z-10 h-6 w-6 items-center justify-center rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-md text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-indigo-100 transition-all duration-200"
+          aria-label={sidebarCompact ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <ChevronLeft className={`h-3.5 w-3.5 transition-transform duration-300 ${sidebarCompact ? 'rotate-180' : ''}`} />
+        </button>
+
+        {/* ── Branding ── */}
+        <div className="flex items-center h-14 px-3 border-b border-slate-100 dark:border-slate-800 overflow-hidden shrink-0">
+          {/* Logo */}
+          <div className={`flex items-center justify-center rounded-xl shadow-md shadow-indigo-100/60 shrink-0 overflow-hidden transition-all duration-300 ${sidebarCompact ? 'h-8 w-8' : 'h-9 w-9'}`} style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
             <img src="/logo.png" alt="Logo" className="h-full w-full object-contain p-0.5" />
           </div>
-          <div className="min-w-0">
-            <div className="text-sm font-bold text-slate-900 leading-tight truncate">Modern Indian School</div>
-            <div className="text-[10px] text-slate-400 font-medium">Timetable · 2025–26</div>
+          {/* Text — fades & slides on collapse */}
+          <div className={`ml-3 min-w-0 flex-1 transition-all duration-300 ${sidebarCompact ? 'opacity-0 w-0 ml-0 overflow-hidden' : 'opacity-100'}`}>
+            <div className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight whitespace-nowrap">Modern Indian School</div>
+            <div className="text-[10px] text-indigo-400 font-semibold tracking-wide whitespace-nowrap">Timetable · 2025–26</div>
           </div>
+          {/* Mobile close */}
+          <button
+            onClick={() => setMobileSidebarOpen(false)}
+            className="lg:hidden ml-auto p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+            aria-label="Close sidebar"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto p-2.5 space-y-0.5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2.5 pt-2 pb-1.5">Views</p>
-          {[
-            { value: 'dashboard', icon: BarChart3, label: 'Dashboard' },
-            { value: 'class', icon: CalendarDays, label: 'Class Timetable' },
-            { value: 'teacher', icon: Users, label: 'Teacher Timetable' },
-            { value: 'workload', icon: Activity, label: 'Workload' },
-            { value: 'ai', icon: Sparkles, label: 'Analysis' },
-          ].map(({ value, icon: Icon, label }) => (
-            <button
-              key={value}
-              onClick={() => setActiveTab(value)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left ${
-                activeTab === value
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Icon className={`h-4 w-4 shrink-0 ${activeTab === value ? 'text-indigo-600' : 'text-slate-400'}`} />
-              {label}
-            </button>
-          ))}
+        {/* ── Nav ── */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 dark:bg-slate-900">
 
-          <div className="h-px bg-slate-100 my-2" />
+          {/* Section: Views */}
+          <div className={`transition-all duration-200 ${sidebarCompact ? 'px-2' : 'px-2'}`}>
+            <p className={`text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 pb-1.5 transition-all duration-200 ${sidebarCompact ? 'text-center text-[8px] opacity-50' : 'px-3 pt-1'}`}>
+              {sidebarCompact ? '···' : 'Views'}
+            </p>
+            <div className="space-y-0.5">
+              {[
+                { value: 'dashboard', icon: BarChart3, label: 'Dashboard' },
+                { value: 'class', icon: CalendarDays, label: 'Class Timetable' },
+                { value: 'teacher', icon: Users, label: 'Teacher Timetable' },
+                { value: 'workload', icon: Activity, label: 'Workload' },
+                { value: 'ai', icon: Sparkles, label: 'Analysis' },
+              ].map(({ value, icon: Icon, label }) => {
+                const isActive = activeTab === value;
+                return (
+                  <button
+                    key={value}
+                    onClick={() => setActiveTab(value)}
+                    title={sidebarCompact ? label : undefined}
+                    className={`group relative w-full flex items-center py-2 rounded-lg text-sm font-medium transition-all duration-150 text-left overflow-hidden ${
+                      sidebarCompact ? 'justify-center px-0' : 'px-3 gap-2.5'
+                    } ${isActive ? 'nav-active' : 'nav-inactive'}`}
+                  >
+                    {/* Active pip when collapsed */}
+                    {isActive && sidebarCompact && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-0.5 rounded-r-full bg-indigo-500" />
+                    )}
+                    <Icon className={`h-4 w-4 shrink-0 transition-colors ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
+                    <span className={`whitespace-nowrap transition-all duration-300 ${sidebarCompact ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2.5 pb-1.5">Manage</p>
-          {[
-            { value: 'manage-teachers', icon: Settings2, label: 'Teachers' },
-            { value: 'settings', icon: Settings, label: 'Settings' },
-          ].map(({ value, icon: Icon, label }) => (
-            <button
-              key={value}
-              onClick={() => setActiveTab(value)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left ${
-                activeTab === value
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Icon className={`h-4 w-4 shrink-0 ${activeTab === value ? 'text-indigo-600' : 'text-slate-400'}`} />
-              {label}
-            </button>
-          ))}
+          <div className="h-px bg-slate-100 dark:bg-slate-800 my-3 mx-3" />
 
-          <div className="h-px bg-slate-100 my-2" />
+          {/* Section: Manage */}
+          <div className="px-2">
+            <p className={`text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 pb-1.5 transition-all duration-200 ${sidebarCompact ? 'text-center text-[8px] opacity-50' : 'px-3'}`}>
+              {sidebarCompact ? '···' : 'Manage'}
+            </p>
+            <div className="space-y-0.5">
+              {[
+                { value: 'manage-teachers', icon: Settings2, label: 'Teachers' },
+                { value: 'settings', icon: Settings, label: 'Settings' },
+              ].map(({ value, icon: Icon, label }) => {
+                const isActive = activeTab === value;
+                return (
+                  <button
+                    key={value}
+                    onClick={() => setActiveTab(value)}
+                    title={sidebarCompact ? label : undefined}
+                    className={`group relative w-full flex items-center py-2 rounded-lg text-sm font-medium transition-all duration-150 text-left overflow-hidden ${
+                      sidebarCompact ? 'justify-center px-0' : 'px-3 gap-2.5'
+                    } ${isActive ? 'nav-active' : 'nav-inactive'}`}
+                  >
+                    {isActive && sidebarCompact && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-0.5 rounded-r-full bg-indigo-500" />
+                    )}
+                    <Icon className={`h-4 w-4 shrink-0 transition-colors ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
+                    <span className={`whitespace-nowrap transition-all duration-300 ${sidebarCompact ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2.5 pb-1.5">Admin</p>
-          <a
-            href="/admin/assignments"
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-          >
-            <Users className="h-4 w-4 shrink-0 text-slate-400" />
-            Assignment Matrix
-          </a>
-          <a
-            href="/admin/teacher-subject/import"
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-          >
-            <BookOpen className="h-4 w-4 shrink-0 text-slate-400" />
-            Import Assignments
-          </a>
+          <div className="h-px bg-slate-100 dark:bg-slate-800 my-3 mx-3" />
+
+          {/* Section: Admin */}
+          <div className="px-2">
+            <p className={`text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 pb-1.5 transition-all duration-200 ${sidebarCompact ? 'text-center text-[8px] opacity-50' : 'px-3'}`}>
+              {sidebarCompact ? '···' : 'Admin'}
+            </p>
+            <div className="space-y-0.5">
+              {[
+                { href: '/admin/assignments', icon: Users, label: 'Assignments' },
+                { href: '/admin/teacher-subject/import', icon: BookOpen, label: 'Import' },
+                { href: '/admin/substitute', icon: Shield, label: 'Substitutes' },
+              ].map(({ href, icon: Icon, label }) => (
+                <a
+                  key={href}
+                  href={href}
+                  title={sidebarCompact ? label : undefined}
+                  className={`group relative nav-inactive w-full flex items-center py-2 rounded-lg text-sm font-medium transition-all duration-150 overflow-hidden ${
+                    sidebarCompact ? 'justify-center px-0' : 'px-3 gap-2.5'
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+                  <span className={`whitespace-nowrap transition-all duration-300 ${sidebarCompact ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
+                    {label}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
         </nav>
 
-        {/* Generate CTA Footer */}
-        <div className="p-3 border-t border-slate-100 space-y-2">
+        {/* ── Footer CTA ── */}
+        <div className="shrink-0 p-3 border-t border-slate-100 dark:border-slate-800 bg-gradient-to-b from-white dark:from-slate-900 to-slate-50/80 dark:to-slate-900 space-y-2">
           <button
             onClick={handleGenerate}
             disabled={generating}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-white font-semibold text-sm transition-all hover:opacity-90 hover:shadow-lg hover:shadow-indigo-200/60 disabled:opacity-60 disabled:cursor-not-allowed shadow-md shadow-indigo-100"
+            title={sidebarCompact ? 'Generate Timetable' : undefined}
+            className={`relative overflow-hidden flex items-center justify-center gap-2 rounded-xl text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed btn-glow transition-all duration-300 ${sidebarCompact ? 'w-10 h-10 mx-auto p-0' : 'w-full px-3 py-2.5'}`}
             style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
           >
-            {generating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {generating ? 'Generating…' : 'Generate Timetable'}
+            <RefreshCw className={`h-4 w-4 shrink-0 ${generating ? 'animate-spin' : ''}`} />
+            <span className={`whitespace-nowrap transition-all duration-300 ${sidebarCompact ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
+              {generating ? 'Generating…' : 'Generate Timetable'}
+            </span>
           </button>
           <button
             onClick={handlePreviewGenerate}
             disabled={previewing}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-200 hover:border-indigo-200 text-slate-600 font-semibold text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            title={sidebarCompact ? 'Preview Changes' : undefined}
+            className={`flex items-center justify-center gap-2 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 dark:bg-slate-800 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-300 border border-slate-200/80 dark:border-slate-700 hover:border-indigo-200 text-slate-600 dark:text-slate-400 font-semibold text-sm transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed ${sidebarCompact ? 'w-10 h-10 mx-auto p-0' : 'w-full px-3 py-2'}`}
           >
-            {previewing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-            {previewing ? 'Previewing…' : 'Preview Changes'}
+            {previewing ? <RefreshCw className="h-4 w-4 shrink-0 animate-spin" /> : <Search className="h-4 w-4 shrink-0" />}
+            <span className={`whitespace-nowrap transition-all duration-300 ${sidebarCompact ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
+              {previewing ? 'Previewing…' : 'Preview Changes'}
+            </span>
           </button>
         </div>
       </aside>
 
       {/* ── Main content ── */}
-      <div className="ml-60 flex-1 flex flex-col min-h-screen">
+      <div className={`flex-1 flex flex-col min-h-screen transition-[margin] duration-300 ease-in-out ${sidebarCompact ? 'lg:ml-[68px]' : 'lg:ml-60'}`}>
 
         {/* Topbar */}
-        <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm shadow-sm">
-          <div className="px-6 py-3 flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-700">
-              {NAV_LABELS[activeTab] ?? 'Timetable'}
-            </span>
+        <header className="sticky top-0 z-40 border-b border-slate-200/60 dark:border-slate-800/60 bg-white/96 dark:bg-slate-900/96 backdrop-blur-md shadow-[0_1px_12px_0_rgba(99,102,241,0.06)]">
+          <div className="px-4 lg:px-6 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              {/* Hamburger — mobile only */}
+              <button
+                onClick={() => setMobileSidebarOpen(true)}
+                className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-slate-400 transition-colors mr-1"
+                aria-label="Open sidebar"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <div className="h-6 w-1 rounded-full" style={{ background: 'linear-gradient(180deg, #6366f1, #8b5cf6)' }} />
+              <span className="text-sm font-bold text-slate-800 dark:text-slate-100 tracking-tight">
+                {NAV_LABELS[activeTab] ?? 'Timetable'}
+              </span>
+            </div>
             <div className="flex items-center gap-1.5">
+              {/* Dark mode toggle */}
+              <button
+                onClick={() => setDarkMode(d => !d)}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition-colors"
+                aria-label="Toggle dark mode"
+                title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+              <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
               <Button
                 variant="ghost" size="sm"
                 onClick={() => setImportDialogOpen(true)}
-                className="text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 gap-1.5"
+                className="text-slate-600 hover:text-indigo-700 hover:bg-indigo-50/80 gap-1.5 rounded-lg"
               >
                 <Upload className="h-3.5 w-3.5" /> Import
               </Button>
-              <div className="h-4 w-px bg-slate-200 mx-0.5" />
+              <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="border-slate-200 gap-1.5">
-                    <FileText className="h-3.5 w-3.5 text-slate-600" />
+                  <Button variant="outline" size="sm" className="border-slate-200 gap-1.5 rounded-lg hover:border-indigo-200 hover:bg-indigo-50/50">
+                    <FileText className="h-3.5 w-3.5 text-slate-500" />
                     Export all
                     <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>All classes (one sheet/page each)</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => handleExport('excel', 'class')}>
+                <DropdownMenuContent align="end" className="w-56 rounded-xl shadow-xl shadow-slate-200/60 border-slate-200">
+                  <DropdownMenuLabel className="text-xs text-slate-500">All classes (one sheet/page each)</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => handleExport('excel', 'class')} className="rounded-lg">
                     <FileSpreadsheet className="h-4 w-4 mr-2 text-emerald-600" /> Excel workbook
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExport('pdf', 'class')}>
+                  <DropdownMenuItem onClick={() => handleExport('pdf', 'class')} className="rounded-lg">
                     <FileText className="h-4 w-4 mr-2 text-red-500" /> PDF (multi-page)
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuLabel>All teachers</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => handleExport('excel', 'teacher')}>
+                  <DropdownMenuLabel className="text-xs text-slate-500">All teachers</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => handleExport('excel', 'teacher')} className="rounded-lg">
                     <FileSpreadsheet className="h-4 w-4 mr-2 text-emerald-600" /> Excel workbook
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExport('pdf', 'teacher')}>
+                  <DropdownMenuItem onClick={() => handleExport('pdf', 'teacher')} className="rounded-lg">
                     <FileText className="h-4 w-4 mr-2 text-red-500" /> PDF (multi-page)
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -1230,7 +1430,7 @@ export default function TimetableManagementSystem() {
               <Button
                 variant="outline" size="sm"
                 onClick={() => handleExport('csv')}
-                className="border-slate-200 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 gap-1.5"
+                className="border-slate-200 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 gap-1.5 rounded-lg"
               >
                 <FileSpreadsheet className="h-3.5 w-3.5 text-blue-500" /> CSV
               </Button>
@@ -1239,7 +1439,7 @@ export default function TimetableManagementSystem() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-4 lg:p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
 
           {/* Settings Tab */}
@@ -1557,8 +1757,7 @@ export default function TimetableManagementSystem() {
                   { label: 'Yoga', cls: 'slot-yoga' },
                   { label: 'Library', cls: 'slot-library' },
                   { label: 'Innovation', cls: 'slot-innovation' },
-                  { label: 'Music', cls: 'slot-music' },
-                  { label: 'Art', cls: 'slot-art' },
+                  { label: 'W.E.', cls: 'slot-we' },
                 ].map(({ label, cls }) => (
                   <span key={label} className={`${cls} text-[11px] font-semibold px-2.5 py-1 rounded-lg`}>{label}</span>
                 ))}
@@ -1654,6 +1853,7 @@ export default function TimetableManagementSystem() {
                             {days.map(day => {
                               const cellSlot = getSlot(sectionSlots, day.id, slot.id);
                               const typeLabel = cellSlot ? getSlotTypeLabel(cellSlot) : null;
+                              const displayedSubject = cellSlot ? getDisplayedSubject(cellSlot) : null;
                               return (
                                 <TableCell key={day.id} className="p-1.5">
                                   {cellSlot ? (
@@ -1666,12 +1866,19 @@ export default function TimetableManagementSystem() {
                                           timeSlotId: slot.id,
                                           subjectId: cellSlot.subjectId,
                                           teacherId: cellSlot.teacherId,
+                                          labTeacherId: cellSlot.labTeacherId ?? null,
+                                          isLab: cellSlot.isLab,
+                                          isGames: cellSlot.isGames,
+                                          isYoga: cellSlot.isYoga,
+                                          isLibrary: cellSlot.isLibrary,
+                                          isInnovation: cellSlot.isInnovation,
+                                          isWE: cellSlot.isWE,
                                         });
                                         setEditDialogOpen(true);
                                       }}
                                       title={[
-                                        cellSlot.subject?.name,
-                                        cellSlot.teacher?.name,
+                                        displayedSubject?.name,
+                                        getSlotTeacherNames(cellSlot),
                                         cellSlot.room?.name,
                                       ].filter(Boolean).join(' — ')}
                                     >
@@ -1679,7 +1886,7 @@ export default function TimetableManagementSystem() {
                                       <button
                                         type="button"
                                         className="absolute right-1 top-1 rounded p-0.5 hover:bg-black/5 transition-colors"
-                                        onClick={(e) => { e.stopPropagation(); handleToggleSlotLock(cellSlot.id); }}
+                                        onClick={(e) => { e.stopPropagation(); handleToggleSlotLock(cellSlot); }}
                                         title={cellSlot.manuallyEdited ? 'Unlock slot' : 'Lock slot'}
                                       >
                                         {cellSlot.manuallyEdited
@@ -1688,11 +1895,11 @@ export default function TimetableManagementSystem() {
                                       </button>
                                       {/* Subject code */}
                                       <div className="font-bold text-sm text-slate-800 leading-tight">
-                                        {cellSlot.subject?.code || cellSlot.subject?.name || '—'}
+                                        {displayedSubject?.code || '—'}
                                       </div>
                                       {/* Teacher abbr */}
-                                      {cellSlot.teacher?.abbreviation && (
-                                        <div className="text-[11px] text-slate-500 font-medium mt-0.5">{cellSlot.teacher.abbreviation}</div>
+                                      {getSlotTeacherAbbreviation(cellSlot) && (
+                                        <div className="text-[11px] text-slate-500 font-medium mt-0.5">{getSlotTeacherAbbreviation(cellSlot)}</div>
                                       )}
                                       {/* Room */}
                                       {cellSlot.room?.name && (
@@ -1863,14 +2070,15 @@ export default function TimetableManagementSystem() {
                               </TableCell>
                               {days.map(day => {
                                 const cellSlot = getSlot(teacherSlots, day.id, slot.id);
+                                const displayedSubject = cellSlot ? getDisplayedSubject(cellSlot) : null;
                                 return (
                                   <TableCell key={day.id} className="p-1.5">
                                     {cellSlot ? (
-                                      <div className={`timetable-cell slot-regular ${cellSlot.manuallyEdited ? 'ring-2 ring-amber-400 ring-offset-1' : ''}`}>
+                                      <div className={`timetable-cell ${getSlotCellClass(cellSlot)} ${cellSlot.manuallyEdited ? 'ring-2 ring-amber-400 ring-offset-1' : ''}`}>
                                         <button
                                           type="button"
                                           className="absolute right-1 top-1 rounded p-0.5 hover:bg-black/5 transition-colors"
-                                          onClick={() => handleToggleSlotLock(cellSlot.id)}
+                                          onClick={(e) => { e.stopPropagation(); handleToggleSlotLock(cellSlot); }}
                                           title={cellSlot.manuallyEdited ? 'Unlock slot' : 'Lock slot'}
                                         >
                                           {cellSlot.manuallyEdited
@@ -1878,7 +2086,7 @@ export default function TimetableManagementSystem() {
                                             : <Unlock className="h-3 w-3 text-slate-300 hover:text-slate-500" />}
                                         </button>
                                         <div className="font-bold text-sm text-indigo-700">{cellSlot.section?.name}</div>
-                                        <div className="text-[11px] text-slate-500 font-medium">{cellSlot.subject?.code}</div>
+                                        <div className="text-[11px] text-slate-500 font-medium">{displayedSubject?.code}</div>
                                         {cellSlot.room?.name && (
                                           <div className="text-[10px] text-slate-400">{cellSlot.room.name}</div>
                                         )}
@@ -2426,7 +2634,9 @@ export default function TimetableManagementSystem() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Timetable Slot</DialogTitle>
-            <DialogDescription>Assign subject and teacher to this slot</DialogDescription>
+            <DialogDescription>
+              Choose an eligible teacher for the selected section and subject. Teacher changes sync across this section-subject.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -2450,16 +2660,25 @@ export default function TimetableManagementSystem() {
               <Select 
                 value={editingSlot.teacherId || ''} 
                 onValueChange={(v) => setEditingSlot(prev => ({ ...prev, teacherId: v || undefined }))}
+                disabled={!editingSlot.subjectId}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select teacher" />
+                  <SelectValue placeholder={editingSlot.subjectId ? 'Select eligible teacher' : 'Select subject first'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {teachers.map(t => (
+                  {eligibleTeachersForEditingSlot.map(t => (
                     <SelectItem key={t.id} value={t.id}>{t.name} ({t.abbreviation})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {editingSlot.subjectId && eligibleTeachersForEditingSlot.length === 0 && (
+                <p className="text-xs text-amber-600">No eligible teachers found for this section and subject.</p>
+              )}
+              {sectionSubjectSlotCount > 1 && (
+                <p className="text-xs text-slate-500">
+                  Saving will update the teacher in all {sectionSubjectSlotCount} timetable slots for this section-subject.
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2">
@@ -2560,7 +2779,7 @@ export default function TimetableManagementSystem() {
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
-                  {['English', 'Physics', 'Chemistry', 'Biology', 'Mathematics', 'Hindi', 'Nepali', 'Commerce', 'Economics', 'Social Studies', 'Computer Science', 'Sports', 'Art', 'Music', 'Library', 'Administration'].map(dept => (
+                  {teacherDepartmentOptions.map(dept => (
                     <SelectItem key={dept} value={dept}>{dept}</SelectItem>
                   ))}
                 </SelectContent>
@@ -2821,11 +3040,17 @@ export default function TimetableManagementSystem() {
                 if (previewSearch) {
                   const q = previewSearch.toLowerCase();
                   const cs = r.current?.subject?.name?.toLowerCase() ?? '';
-                  const ct = r.current?.teacher?.name?.toLowerCase() ?? '';
-                  const cta = r.current?.teacher?.abbreviation?.toLowerCase() ?? '';
+                  const ct = getSlotTeacherNames(r.current ?? {}).toLowerCase();
+                  const cta = getSlotTeacherAbbreviation(r.current ?? {}).toLowerCase();
                   const ps = subjects.find(s => s.id === r.preview?.subjectId)?.name?.toLowerCase() ?? '';
-                  const pt = teachers.find(t => t.id === r.preview?.teacherId)?.name?.toLowerCase() ?? '';
-                  const pta = teachers.find(t => t.id === r.preview?.teacherId)?.abbreviation?.toLowerCase() ?? '';
+                  const pt = [r.preview?.teacherId, r.preview?.labTeacherId]
+                    .map(id => teachers.find(t => t.id === id)?.name?.toLowerCase() ?? '')
+                    .filter((value, index, list) => value && list.indexOf(value) === index)
+                    .join(' + ');
+                  const pta = [r.preview?.teacherId, r.preview?.labTeacherId]
+                    .map(id => teachers.find(t => t.id === id)?.abbreviation?.toLowerCase() ?? '')
+                    .filter((value, index, list) => value && list.indexOf(value) === index)
+                    .join(' + ');
                   if (!cs.includes(q) && !ct.includes(q) && !cta.includes(q) && !ps.includes(q) && !pt.includes(q) && !pta.includes(q)) return false;
                 }
                 return true;
@@ -2901,17 +3126,26 @@ export default function TimetableManagementSystem() {
                           const periodTime = ts ? `${ts.startTime}–${ts.endTime}` : '';
 
                           const currentSubj = row.current?.subject?.name ?? row.current?.subjectId ?? '—';
-                          const currentTeacherName = row.current?.teacher?.name ?? '';
-                          const currentTeacherAbbr = row.current?.teacher?.abbreviation ?? row.current?.teacherId ?? '—';
+                          const currentTeacherName = row.current ? getSlotTeacherNames(row.current) : '';
+                          const currentTeacherAbbr = row.current
+                            ? getSlotTeacherAbbreviation(row.current) || row.current.teacherId || '—'
+                            : '—';
 
                           const previewSubj = row.preview
                             ? (subjects.find(s => s.id === row.preview!.subjectId)?.name ?? row.preview.subjectId ?? '—')
                             : '—';
-                          const previewTeacher = row.preview
-                            ? teachers.find(t => t.id === row.preview!.teacherId)
-                            : null;
-                          const previewTeacherAbbr = previewTeacher?.abbreviation ?? row.preview?.teacherId ?? '—';
-                          const previewTeacherName = previewTeacher?.name ?? '';
+                          const previewTeacherAbbr = row.preview
+                            ? [row.preview.teacherId, row.preview.labTeacherId]
+                                .map(id => teachers.find(t => t.id === id)?.abbreviation ?? '')
+                                .filter((value, index, list) => value && list.indexOf(value) === index)
+                                .join(' + ') || row.preview.teacherId || '—'
+                            : '—';
+                          const previewTeacherName = row.preview
+                            ? [row.preview.teacherId, row.preview.labTeacherId]
+                                .map(id => teachers.find(t => t.id === id)?.name ?? '')
+                                .filter((value, index, list) => value && list.indexOf(value) === index)
+                                .join(' + ')
+                            : '';
 
                           const typeStyle = {
                             add: { bg: 'border-l-emerald-400 bg-emerald-50/40', badge: 'bg-emerald-100 text-emerald-700', label: '+ ADDED' },

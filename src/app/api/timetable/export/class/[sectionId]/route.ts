@@ -27,7 +27,7 @@ export async function GET(
     db.section.findUnique({ where: { id: sectionId } }),
     db.timetableSlot.findMany({
       where:   { sectionId },
-      include: { day: true, timeSlot: true, subject: true, teacher: true },
+      include: { day: true, timeSlot: true, subject: true, teacher: true, labTeacher: true },
       orderBy: [{ day: { dayOrder: 'asc' } }, { timeSlot: { periodNumber: 'asc' } }],
     }),
     db.day.findMany({ orderBy: { dayOrder: 'asc' } }),

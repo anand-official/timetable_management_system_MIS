@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const AUTH_COOKIE_NAME = 'mis-access';
-const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12; // 12 hours
+import {
+  AUTH_COOKIE_MAX_AGE_SECONDS,
+  AUTH_COOKIE_NAME,
+  createAuthSessionValue,
+  isSafeNextPath,
+} from '@/lib/auth-session';
 
 function getSecretCode() {
   return process.env.ACCESS_CODE || process.env.MIS_ACCESS_CODE;
@@ -19,16 +22,20 @@ function buildAuthUrl(request: NextRequest, nextPath: string, error?: string) {
 }
 
 function resolveNextPath(request: NextRequest, rawPath: string | null) {
-  if (rawPath && rawPath.startsWith('/')) {
+  if (isSafeNextPath(rawPath)) {
     return rawPath;
   }
 
   const referer = request.headers.get('referer');
   if (referer) {
-    const refererUrl = new URL(referer);
-    const next = refererUrl.searchParams.get('next');
-    if (next && next.startsWith('/')) {
-      return next;
+    try {
+      const refererUrl = new URL(referer);
+      const next = refererUrl.searchParams.get('next');
+      if (isSafeNextPath(next)) {
+        return next;
+      }
+    } catch {
+      // Ignore malformed referer headers and fall back to the root page.
     }
   }
 
@@ -52,10 +59,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(buildAuthUrl(request, nextPath, 'invalid-code'), { status: 303 });
   }
 
+  const sessionValue = await createAuthSessionValue();
+  if (!sessionValue) {
+    return NextResponse.json(
+      { error: 'AUTH_SESSION_SECRET, ACCESS_CODE, or MIS_ACCESS_CODE is not configured on the server.' },
+      { status: 500 }
+    );
+  }
+
   const response = NextResponse.redirect(new URL(nextPath, request.url), { status: 303 });
   response.cookies.set({
     name: AUTH_COOKIE_NAME,
-    value: 'granted',
+    value: sessionValue,
     path: '/',
     httpOnly: true,
     sameSite: 'lax',

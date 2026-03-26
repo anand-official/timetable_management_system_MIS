@@ -13,6 +13,18 @@ function safeAvg(nums: number[]): number {
   return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
 }
 
+function mergeTeacherSlots<T extends { id: string }>(...groups: T[][]) {
+  const merged = new Map<string, T>();
+  for (const group of groups) {
+    for (const slot of group) {
+      if (!merged.has(slot.id)) {
+        merged.set(slot.id, slot);
+      }
+    }
+  }
+  return Array.from(merged.values());
+}
+
 // ── GET ────────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -31,6 +43,7 @@ export async function GET(request: NextRequest) {
         include: {
           teacherSubjects: { include: { subject: true, section: true } },
           timetableSlots: { include: { day: true, timeSlot: true, subject: true, section: true } },
+          labTimetableSlots: { include: { day: true, timeSlot: true, subject: true, section: true } },
         },
       });
 
@@ -38,7 +51,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
       }
 
-      const current = teacher.timetableSlots.length;
+      const mergedSlots = mergeTeacherSlots(teacher.timetableSlots, teacher.labTimetableSlots);
+      const current = mergedSlots.length;
       const target = Math.max(teacher.targetWorkload, 1);
 
       return NextResponse.json({
@@ -58,7 +72,7 @@ export async function GET(request: NextRequest) {
           section: ts.section.name,
           periods: ts.periodsPerWeek,
         })),
-        slots: teacher.timetableSlots.map(slot => ({
+        slots: mergedSlots.map(slot => ({
           day: slot.day.name,
           period: slot.timeSlot.periodNumber,
           subject: slot.subject?.name ?? null,
@@ -71,12 +85,13 @@ export async function GET(request: NextRequest) {
       include: {
         teacherSubjects: { include: { subject: true, section: true } },
         timetableSlots: true,
+        labTimetableSlots: true,
       },
       orderBy: { department: 'asc' },
     });
 
     const workloadData = teachers.map(t => {
-      const current = t.timetableSlots.length;
+      const current = mergeTeacherSlots(t.timetableSlots, t.labTimetableSlots).length;
       const diff = current - t.targetWorkload;
       return {
         id: t.id,
@@ -113,14 +128,14 @@ export async function GET(request: NextRequest) {
 export async function POST() {
   try {
     const teachers = await db.teacher.findMany({
-      include: { teacherSubjects: true, timetableSlots: true },
+      include: { teacherSubjects: true, timetableSlots: true, labTimetableSlots: true },
     });
 
     await db.workloadValidation.deleteMany();
 
     const validations = await Promise.all(
       teachers.map(teacher => {
-        const current = teacher.timetableSlots.length;
+        const current = mergeTeacherSlots(teacher.timetableSlots, teacher.labTimetableSlots).length;
         const diff = current - teacher.targetWorkload;
         const status = Math.abs(diff) <= 2 ? 'OK' : diff < 0 ? 'Under' : 'Over';
         const warnings: string[] = [];

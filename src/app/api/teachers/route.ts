@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
           },
           teacherSections: { include: { grade: true } },
           coordinatorFor: { include: { grade: true } },
-          _count: { select: { timetableSlots: true } },
+          _count: { select: { timetableSlots: true, labTimetableSlots: true } },
         },
       });
 
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         _count: {
-          select: { teacherSubjects: true, timetableSlots: true },
+          select: { teacherSubjects: true, timetableSlots: true, labTimetableSlots: true },
         },
       },
       orderBy: [{ department: 'asc' }, { name: 'asc' }],
@@ -177,6 +177,7 @@ export async function DELETE(request: NextRequest) {
           select: {
             teacherSubjects: true,
             timetableSlots: true,
+            labTimetableSlots: true,
             teacherSections: true,
             coordinatorFor: true,
           },
@@ -188,9 +189,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
     }
 
-    if (teacher._count.timetableSlots > 0) {
+    const totalTimetableSlots = teacher._count.timetableSlots + teacher._count.labTimetableSlots;
+    if (totalTimetableSlots > 0) {
       return NextResponse.json(
-        { error: `Cannot delete: teacher has ${teacher._count.timetableSlots} timetable slot(s). Remove assignments first.` },
+        { error: `Cannot delete: teacher has ${totalTimetableSlots} timetable slot(s). Remove assignments first.` },
         { status: 400 }
       );
     }

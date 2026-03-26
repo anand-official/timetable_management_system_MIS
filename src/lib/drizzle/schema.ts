@@ -113,6 +113,7 @@ export const timetableSlots = sqliteTable('TimetableSlot', {
   timeSlotId: text('timeSlotId').notNull(),
   subjectId: text('subjectId'),
   teacherId: text('teacherId'),
+  labTeacherId: text('labTeacherId'),
   roomId: text('roomId'),
   isLab: integer('isLab', { mode: 'boolean' }).notNull().default(false),
   isInnovation: integer('isInnovation', { mode: 'boolean' }).notNull().default(false),

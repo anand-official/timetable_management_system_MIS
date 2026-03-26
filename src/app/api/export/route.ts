@@ -17,6 +17,15 @@ function schoolSubtitle(schoolName: string | null, academicYear: string | null):
   return `${name}  |  Academic Year ${year}`;
 }
 
+function getTeacherExportLabel(slot: { teacher?: { name?: string | null; abbreviation?: string | null } | null; labTeacher?: { name?: string | null; abbreviation?: string | null } | null }) {
+  const names = [slot.teacher?.name, slot.labTeacher?.name].filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
+  const abbreviations = [slot.teacher?.abbreviation, slot.labTeacher?.abbreviation].filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
+  return {
+    names: names.join(' + '),
+    abbreviations: abbreviations.join(' + '),
+  };
+}
+
 // ── GET — Export timetable (CSV/JSON use flat rows; Excel/PDF use native TS generators) ──
 
 export async function GET(request: NextRequest) {
@@ -49,12 +58,13 @@ export async function GET(request: NextRequest) {
       db.day.findMany({ orderBy: { dayOrder: 'asc' } }),
       db.timeSlot.findMany({ orderBy: { periodNumber: 'asc' } }),
       db.timetableSlot.findMany({
-        include: { day: true, timeSlot: true, subject: true, teacher: true, section: true },
+        include: { day: true, timeSlot: true, subject: true, teacher: true, labTeacher: true, section: true },
       }),
       db.schoolConfig.findFirst(),
     ]);
 
     const sections = sortSectionsByGradeThenName(sectionsRaw);
+    const teacherWorkloadMap = buildTeacherWorkloadMap(allSlots);
 
     const subtitle = schoolSubtitle(schoolConfig?.schoolName ?? null, schoolConfig?.academicYear ?? null);
 
@@ -70,7 +80,7 @@ export async function GET(request: NextRequest) {
         abbreviation: t.abbreviation,
         department: t.department,
         targetWorkload: t.targetWorkload,
-        currentWorkload: t.currentWorkload,
+        currentWorkload: teacherWorkloadMap.get(t.id) ?? 0,
       })),
       days: days.map(d => d.name),
       periods: timeSlots.map(t => ({
@@ -87,8 +97,10 @@ export async function GET(request: NextRequest) {
         endTime: slot.timeSlot.endTime,
         subject: slot.subject?.name ?? '',
         subjectCode: slot.subject?.code ?? '',
-        teacher: slot.teacher?.name ?? '',
-        teacherAbbr: slot.teacher?.abbreviation ?? '',
+        teacher: getTeacherExportLabel(slot).names,
+        teacherAbbr: getTeacherExportLabel(slot).abbreviations,
+        labTeacher: slot.labTeacher?.name ?? '',
+        labTeacherAbbr: slot.labTeacher?.abbreviation ?? '',
         isLab: slot.isLab,
         isGames: slot.isGames,
         isYoga: slot.isYoga,
@@ -97,8 +109,9 @@ export async function GET(request: NextRequest) {
     };
 
     if (format === 'csv') {
-      let csv = 'Section,Day,Period,Start Time,End Time,Subject,Teacher\n';
+      let csv = 'Section,Day,Period,Start Time,End Time,Subject,Teacher,Lab Teacher\n';
       for (const slot of allSlots) {
+        const teacherLabel = getTeacherExportLabel(slot);
         const row = [
           slot.section?.name ?? '',
           slot.day.name,
@@ -106,7 +119,8 @@ export async function GET(request: NextRequest) {
           slot.timeSlot.startTime,
           slot.timeSlot.endTime,
           slot.subject?.name ?? '',
-          slot.teacher?.name ?? '',
+          teacherLabel.names,
+          slot.labTeacher?.name ?? '',
         ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
         csv += row + '\n';
       }
@@ -124,7 +138,7 @@ export async function GET(request: NextRequest) {
 
       if (type === 'teacher') {
         grids = teachers.map(t => {
-          const slots = allSlots.filter(s => s.teacherId === t.id);
+          const slots = allSlots.filter(s => s.teacherId === t.id || s.labTeacherId === t.id);
           const g = buildTeacherGrid(t.name, t.abbreviation, slots, days, timeSlots);
           g.subtitle = subtitle;
           return g;
@@ -157,7 +171,7 @@ export async function GET(request: NextRequest) {
 
       if (type === 'teacher') {
         grids = teachers.map(t => {
-          const slots = allSlots.filter(s => s.teacherId === t.id);
+          const slots = allSlots.filter(s => s.teacherId === t.id || s.labTeacherId === t.id);
           const g = buildTeacherGrid(t.name, t.abbreviation, slots, days, timeSlots);
           g.subtitle = subtitle;
           return g;
@@ -195,4 +209,25 @@ export async function GET(request: NextRequest) {
         : undefined;
     return NextResponse.json({ error: 'Export failed', detail }, { status: 500 });
   }
+}
+
+function buildTeacherWorkloadMap(
+  slots: Array<{ teacherId: string | null; labTeacherId: string | null; dayId: string; timeSlotId: string }>
+) {
+  const teacherSlotKeys = new Map<string, Set<string>>();
+
+  for (const slot of slots) {
+    const key = `${slot.dayId}|${slot.timeSlotId}`;
+    for (const teacherId of [slot.teacherId, slot.labTeacherId]) {
+      if (!teacherId) continue;
+      if (!teacherSlotKeys.has(teacherId)) {
+        teacherSlotKeys.set(teacherId, new Set());
+      }
+      teacherSlotKeys.get(teacherId)!.add(key);
+    }
+  }
+
+  return new Map(
+    Array.from(teacherSlotKeys.entries()).map(([teacherId, slotKeys]) => [teacherId, slotKeys.size])
+  );
 }

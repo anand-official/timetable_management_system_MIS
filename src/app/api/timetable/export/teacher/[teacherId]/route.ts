@@ -26,8 +26,8 @@ export async function GET(
   const [teacher, slots, days, timeSlots, schoolConfig] = await Promise.all([
     db.teacher.findUnique({ where: { id: teacherId } }),
     db.timetableSlot.findMany({
-      where:   { teacherId },
-      include: { day: true, timeSlot: true, subject: true, section: true },
+      where:   { OR: [{ teacherId }, { labTeacherId: teacherId }] },
+      include: { day: true, timeSlot: true, subject: true, teacher: true, labTeacher: true, section: true },
       orderBy: [{ day: { dayOrder: 'asc' } }, { timeSlot: { periodNumber: 'asc' } }],
     }),
     db.day.findMany({ orderBy: { dayOrder: 'asc' } }),

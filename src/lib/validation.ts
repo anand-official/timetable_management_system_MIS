@@ -38,6 +38,7 @@ export const TimetableSlotSchema = z.object({
   timeSlotId: cuid(),
   subjectId: cuid().optional(),
   teacherId: cuid().optional(),
+  labTeacherId: cuid().optional(),
   roomId: cuid().optional(),
   isLab: z.boolean().optional().default(false),
   isGames: z.boolean().optional().default(false),

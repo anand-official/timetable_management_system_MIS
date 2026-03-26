@@ -61,7 +61,8 @@ model Teacher {
   coordinatorFor   Section[]              @relation("Coordinator")
   teacherSections  Section[]              @relation("ClassTeacher")
   teacherSubjects  TeacherSubject[]
-  timetableSlots   TimetableSlot[]
+  timetableSlots   TimetableSlot[]        @relation("PrimaryTeacherSlots")
+  labTimetableSlots TimetableSlot[]       @relation("LabTeacherSlots")
   validations      WorkloadValidation[]
   unavailabilities TeacherUnavailability[]
   absences         TeacherAbsence[]
@@ -128,6 +129,7 @@ model TimetableSlot {
   timeSlotId     String
   subjectId      String?
   teacherId      String?
+  labTeacherId   String?
   roomId         String?
   isLab          Boolean  @default(false)
   isInnovation   Boolean  @default(false)
@@ -142,7 +144,8 @@ model TimetableSlot {
   notes          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  teacher        Teacher? @relation(fields: [teacherId], references: [id])
+  teacher        Teacher? @relation("PrimaryTeacherSlots", fields: [teacherId], references: [id])
+  labTeacher     Teacher? @relation("LabTeacherSlots", fields: [labTeacherId], references: [id])
   room           Room?    @relation(fields: [roomId], references: [id])
   subject        Subject? @relation(fields: [subjectId], references: [id])
   timeSlot       TimeSlot @relation(fields: [timeSlotId], references: [id])

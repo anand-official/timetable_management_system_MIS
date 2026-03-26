@@ -3,6 +3,20 @@ import { db } from '@/lib/db';
 import { AiScheduleSchema, validationError } from '@/lib/validation';
 import { sortSectionsByGradeThenName } from '@/lib/section-sort';
 
+export const maxDuration = 60;
+
+function mergeTeacherSlots<T extends { id: string }>(...groups: T[][]) {
+  const merged = new Map<string, T>();
+  for (const group of groups) {
+    for (const slot of group) {
+      if (!merged.has(slot.id)) {
+        merged.set(slot.id, slot);
+      }
+    }
+  }
+  return Array.from(merged.values());
+}
+
 // ── POST ───────────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
@@ -17,12 +31,12 @@ export async function POST(request: NextRequest) {
 
     const [sectionsRaw, teachers, subjects, days, timeSlots, existingSlots] = await Promise.all([
       db.section.findMany({ include: { grade: true, classTeacher: true } }),
-      db.teacher.findMany({ include: { timetableSlots: true } }),
+      db.teacher.findMany({ include: { timetableSlots: true, labTimetableSlots: true } }),
       db.subject.findMany(),
       db.day.findMany({ orderBy: { dayOrder: 'asc' } }),
       db.timeSlot.findMany({ orderBy: { periodNumber: 'asc' } }),
       db.timetableSlot.findMany({
-        include: { day: true, timeSlot: true, subject: true, teacher: true, section: true },
+        include: { day: true, timeSlot: true, subject: true, teacher: true, labTeacher: true, section: true },
       }),
     ]);
     const sections = sortSectionsByGradeThenName(sectionsRaw);
@@ -63,7 +77,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     const [teachers, sectionsRaw, slots] = await Promise.all([
-      db.teacher.findMany({ include: { timetableSlots: true } }),
+      db.teacher.findMany({ include: { timetableSlots: true, labTimetableSlots: true } }),
       db.section.findMany({ include: { grade: true } }),
       db.timetableSlot.findMany(),
     ]);
@@ -95,7 +109,7 @@ function perSectionValidSlots(_sectionName: string, daysCount: number, periodsCo
 }
 
 function buildStats(teachers: any[], sections: any[], slots: any[]) {
-  const workloads = teachers.map((t: any) => t.timetableSlots?.length ?? 0);
+  const workloads = teachers.map((t: any) => mergeTeacherSlots(t.timetableSlots ?? [], t.labTimetableSlots ?? []).length);
   return {
     totalTeachers: teachers.length,
     totalSections: sections.length,
@@ -103,8 +117,8 @@ function buildStats(teachers: any[], sections: any[], slots: any[]) {
     averageWorkload: Math.round(
       workloads.reduce((s: number, w: number) => s + w, 0) / Math.max(teachers.length, 1)
     ),
-    underloadedTeachers: teachers.filter((t: any) => (t.timetableSlots?.length ?? 0) < t.targetWorkload - 2).length,
-    overloadedTeachers: teachers.filter((t: any) => (t.timetableSlots?.length ?? 0) > t.targetWorkload + 2).length,
+    underloadedTeachers: teachers.filter((t: any) => mergeTeacherSlots(t.timetableSlots ?? [], t.labTimetableSlots ?? []).length < t.targetWorkload - 2).length,
+    overloadedTeachers: teachers.filter((t: any) => mergeTeacherSlots(t.timetableSlots ?? [], t.labTimetableSlots ?? []).length > t.targetWorkload + 2).length,
     slotsPerSection: Math.round(slots.length / Math.max(sections.length, 1)),
   };
 }
@@ -117,7 +131,7 @@ function generateAnalysis(
   timeSlots: any[],
   subjects: any[]
 ): string {
-  const teacherWorkload = (t: any) => t.timetableSlots?.length ?? 0;
+  const teacherWorkload = (t: any) => mergeTeacherSlots(t.timetableSlots ?? [], t.labTimetableSlots ?? []).length;
   const overworked = teachers.filter((t: any) => teacherWorkload(t) > t.targetWorkload + 2);
   const underworked = teachers.filter((t: any) => teacherWorkload(t) < t.targetWorkload - 2);
   const balanced = teachers.filter((t: any) => Math.abs(teacherWorkload(t) - t.targetWorkload) <= 2);
@@ -227,7 +241,7 @@ function generateSuggestions(
   }
   if (teacherId) {
     const teacher = teachers.find((t: any) => t.id === teacherId);
-    const tSlots = existingSlots.filter((s: any) => s.teacherId === teacherId);
+    const tSlots = existingSlots.filter((s: any) => s.teacherId === teacherId || s.labTeacherId === teacherId);
     const sectionsAssigned = [...new Set(tSlots.map((s: any) => s.section?.name).filter(Boolean))];
     const diff = tSlots.length - (teacher?.targetWorkload ?? 0);
     return `# Suggestions for ${teacher?.name ?? 'Teacher'}\n\n- Department: ${teacher?.department}\n- Workload: ${tSlots.length} / ${teacher?.targetWorkload} (${diff > 0 ? '+' : ''}${diff})\n- Teaching: ${sectionsAssigned.join(', ') || 'none'}\n\n## Tips\n${diff > 2 ? '1. This teacher is overworked — redistribute some periods\n' : diff < -2 ? '1. This teacher has capacity for more periods\n' : '1. Workload is balanced\n'}2. Max 6 periods per day is enforced\n3. HODs should have 18–22 periods\n`;

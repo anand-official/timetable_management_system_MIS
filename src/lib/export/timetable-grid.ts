@@ -70,9 +70,15 @@ export function cellColorArgb(cell: CellData): string {
 // ── Slot shape returned by Prisma include ─────────────────────────────────────
 type RawSlot = any;
 
+function teacherAbbreviationLabel(slot: RawSlot) {
+  return [slot.teacher?.abbreviation, slot.labTeacher?.abbreviation]
+    .filter((value: unknown, index: number, list: unknown[]) => Boolean(value) && list.indexOf(value) === index)
+    .join(' + ');
+}
+
 function makeCell(slot: RawSlot, line2: string): CellData {
   return {
-    line1: slot.subject?.code ?? slot.subject?.name ?? '—',
+    line1: slot.isWE ? 'W.E.' : (slot.subject?.code ?? slot.subject?.name ?? '—'),
     line2,
     isLab: slot.isLab ?? false,
     isGames: slot.isGames ?? false,
@@ -120,7 +126,7 @@ export function buildClassGrid(
   const cells: (CellData | null)[][] = sortedPeriods.map(period =>
     sortedDays.map(day => {
       const s = slotMap.get(`${day.id}|${period.periodNumber}`);
-      return s ? makeCell(s, s.teacher?.abbreviation ?? '') : null;
+      return s ? makeCell(s, teacherAbbreviationLabel(s)) : null;
     })
   );
 

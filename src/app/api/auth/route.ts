@@ -7,6 +7,17 @@ function getSecretCode() {
   return process.env.ACCESS_CODE || process.env.MIS_ACCESS_CODE;
 }
 
+function buildAuthUrl(request: NextRequest, nextPath: string, error?: string) {
+  const authUrl = new URL('/auth', request.url);
+  if (error) {
+    authUrl.searchParams.set('error', error);
+  }
+  if (nextPath !== '/') {
+    authUrl.searchParams.set('next', nextPath);
+  }
+  return authUrl;
+}
+
 function resolveNextPath(request: NextRequest, rawPath: string | null) {
   if (rawPath && rawPath.startsWith('/')) {
     return rawPath;
@@ -38,7 +49,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (submittedCode !== secretCode) {
-    return NextResponse.redirect(new URL('/auth?error=invalid-code', request.url), { status: 303 });
+    return NextResponse.redirect(buildAuthUrl(request, nextPath, 'invalid-code'), { status: 303 });
   }
 
   const response = NextResponse.redirect(new URL(nextPath, request.url), { status: 303 });
@@ -58,12 +69,13 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const shouldLogout = url.searchParams.get('logout') === '1';
+  const nextPath = resolveNextPath(request, url.searchParams.get('next'));
 
   if (!shouldLogout) {
-    return NextResponse.redirect(new URL('/auth', request.url), { status: 303 });
+    return NextResponse.redirect(buildAuthUrl(request, nextPath), { status: 303 });
   }
 
-  const response = NextResponse.redirect(new URL('/auth', request.url), { status: 303 });
+  const response = NextResponse.redirect(buildAuthUrl(request, nextPath), { status: 303 });
   response.cookies.set({
     name: AUTH_COOKIE_NAME,
     value: '',

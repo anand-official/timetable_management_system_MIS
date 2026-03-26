@@ -22,10 +22,20 @@ function isPublicPath(pathname: string) {
   return PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
+function isAuthEnabled() {
+  return (process.env.AUTH_ENABLED ?? 'true').toLowerCase() !== 'false';
+}
+
 // ── Middleware ─────────────────────────────────────────────────────────────────
 
 export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+
+  if (!isAuthEnabled()) {
+    const response = NextResponse.next();
+    applySecurityHeaders(response);
+    return response;
+  }
 
   if (isPublicPath(pathname)) {
     const response = NextResponse.next();

@@ -5,6 +5,8 @@ import { GenerateSchema, validationError } from '@/lib/validation';
 import { auditLabSplits, repairLabSplits } from '@/lib/lab-audit';
 import { sortSectionsByGradeThenName } from '@/lib/section-sort';
 
+export const maxDuration = 60; // seconds — Vercel hobby max
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface TeacherAssignment {
@@ -103,6 +105,90 @@ const GAMES_WORKLOAD_BUFFER  = 1;   // sports teachers: targetWorkload + 1
 
 // Grades where Yoga/Aerobics are NOT scheduled (XI and XII have no Yoga/Aerobics periods).
 const NO_YOGA_GRADES = new Set(['XI', 'XII']);
+
+// Reference weekly demand reconstructed from the school's class timetables.
+// These totals fit the full 6-day x 8-period grid and replace the older stale hardcoded table.
+const REFERENCE_GRADE_REQUIREMENTS: Record<string, Record<string, number>> = {
+  VI: {
+    '2nd Language': 6,
+    '3rd Language': 4,
+    English: 6,
+    Mathematics: 8,
+    Science: 6,
+    'Social Studies': 6,
+    'Computer Science': 3,
+    Games: 3,
+    'Work Experience': 2,
+    Library: 1,
+    Innovation: 1,
+    Yoga: 1,
+    Aerobics: 1,
+  },
+  VII: {
+    '2nd Language': 6,
+    '3rd Language': 4,
+    English: 6,
+    Mathematics: 8,
+    Science: 6,
+    'Social Studies': 6,
+    'Computer Science': 3,
+    Games: 3,
+    'Work Experience': 2,
+    Library: 1,
+    Innovation: 1,
+    Yoga: 1,
+    Aerobics: 1,
+  },
+  VIII: {
+    '2nd Language': 6,
+    '3rd Language': 4,
+    English: 6,
+    Mathematics: 8,
+    Science: 6,
+    'Social Studies': 6,
+    'Computer Science': 3,
+    Games: 3,
+    'Work Experience': 2,
+    Library: 1,
+    Innovation: 1,
+    Yoga: 1,
+    Aerobics: 1,
+  },
+  IX: {
+    '2nd Language': 6,
+    English: 7,
+    Mathematics: 8,
+    Physics: 3,
+    Chemistry: 3,
+    Biology: 3,
+    'Social Studies': 8,
+    'Computer Science': 3,
+    Games: 3,
+    'Work Experience': 2,
+    Library: 1,
+    Innovation: 1,
+  },
+  X: {
+    '2nd Language': 5,
+    English: 6,
+    Mathematics: 9,
+    Physics: 4,
+    Chemistry: 4,
+    Biology: 4,
+    Geography: 2,
+    Economics: 2,
+    'Home Science': 3,
+    'Computer Science': 3,
+    Games: 3,
+    'Work Experience': 1,
+    Library: 1,
+    Innovation: 1,
+  },
+};
+
+const LANGUAGE_BUCKET_SUBJECTS = ['Hindi', 'Nepali', 'French'];
+const WORK_EXPERIENCE_BUCKET_SUBJECTS = ['Work Experience', 'Art', 'Music', 'Dance'];
+const SCIENCE_BUCKET_SUBJECTS = ['Science', 'Biology', 'Physics', 'Chemistry'];
 
 
 
@@ -535,10 +621,10 @@ export async function POST(request: NextRequest) {
           return false;
         }
 
-        // W.E. subjects (Music, Art, Dance, Work Experience) are only for classes VI–IX.
+        // W.E. subjects (Music, Art, Dance, Work Experience) are only for classes VI–X.
         if (WE_SUBJECTS.has(subjectObj.name)) {
           const grade = sectionGradeMap.get(sectionId) ?? '';
-          if (grade === 'X' || grade === 'XI' || grade === 'XII') return false;
+          if (grade === 'XI' || grade === 'XII') return false;
         }
 
         // Games-specific hard constraints (no soft constraints apply to Games):
@@ -730,14 +816,6 @@ export async function POST(request: NextRequest) {
     // ── SUBJECT FREQUENCY TABLE (derived from school PDF analysis) ───────────
     // Classes VI–X: all sections in a grade share the same frequency.
     // Classes XI–XII: use per-section periodsPerWeek from TeacherSubject DB.
-    const SUBJECT_PERIODS: Record<string, Record<string, number>> = {
-      'VI':  { Mathematics:6, English:5, Science:5, 'Social Studies':5, 'Computer Science':2, Hindi:3, Nepali:3, Games:2, 'Work Experience':1, Yoga:1, Library:1, Innovation:1, Aerobics:1 },
-      'VII': { Mathematics:6, English:5, Science:5, 'Social Studies':5, 'Computer Science':2, Hindi:3, Nepali:3, Games:2, 'Work Experience':1, Yoga:1, Library:1, Innovation:1, Aerobics:1 },
-      'VIII':{ Mathematics:6, English:5, Science:5, 'Social Studies':5, 'Computer Science':2, Hindi:3, Nepali:3, Games:2, 'Work Experience':1, Yoga:1, Library:1, Innovation:1, Aerobics:1 },
-      'IX':  { Mathematics:6, English:5, Physics:2, Chemistry:2, Biology:2, 'Social Studies':5, 'Computer Science':2, Hindi:3, Nepali:3, Games:2, 'Work Experience':1, Yoga:1, Library:1, Innovation:1 },
-      'X':   { Mathematics:6, English:5, Physics:2, Chemistry:2, Biology:2, 'Social Studies':5, 'Computer Science':2, Hindi:3, Nepali:3, Games:2, Yoga:1, Library:1, Innovation:1 },
-    };
-
     // Heavy subjects: max 2 of these per day per section (Improvement 5)
     const HEAVY_SUBJECTS = new Set(['Mathematics', 'Physics', 'Chemistry', 'Science', 'Biology']);
     const MAX_HEAVY_PER_DAY = 2;
@@ -747,6 +825,8 @@ export async function POST(request: NextRequest) {
 
     const unassigned: string[] = [];
     const warnings: string[] = [];
+    const allocationNotes: string[] = [];
+    const subjectByName = new Map(subjects.map(s => [s.name, s]));
 
     // ═══ LAYER 1: TEACHER ALLOCATION ═════════════════════════════════════════
     // Build sectionTeacherMap: Map<sectionId, Map<subjectId, teacherId>>
@@ -770,9 +850,182 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const assignments: TeacherAssignment[] = Array.from(primaryMap.values()) as TeacherAssignment[];
+    let assignments: TeacherAssignment[] = Array.from(primaryMap.values()) as TeacherAssignment[];
+    const projectedTeacherLoad = new Map<string, number>(teachers.map(t => [t.id, 0]));
+    for (const a of assignments) {
+      projectedTeacherLoad.set(a.teacherId, (projectedTeacherLoad.get(a.teacherId) ?? 0) + a.periodsPerWeek);
+    }
 
-    // Build the sectionTeacherMap from existing assignments
+    // Existing assignments before reference normalization / auto-fill.
+    const existingSectionTeacherMap = new Map<string, Map<string, { teacherId: string; periodsPerWeek: number }>>();
+    for (const section of sections) {
+      existingSectionTeacherMap.set(section.id, new Map());
+    }
+
+    for (const a of assignments) {
+      const map = existingSectionTeacherMap.get(a.sectionId);
+      if (map) {
+        map.set(a.subjectId, { teacherId: a.teacherId, periodsPerWeek: a.periodsPerWeek });
+      }
+    }
+
+    const pickBucketSubjectName = (
+      sectionId: string,
+      candidates: string[],
+      usedNames: Set<string>
+    ): string | null => {
+      const sectionAssignments = existingSectionTeacherMap.get(sectionId);
+      const ranked = candidates
+        .filter(name => !usedNames.has(name) && subjectByName.has(name))
+        .map((name, order) => {
+          const subjectId = subjectByName.get(name)?.id ?? '';
+          const periodsPerWeek = subjectId
+            ? (sectionAssignments?.get(subjectId)?.periodsPerWeek ?? -1)
+            : -1;
+          return { name, order, periodsPerWeek };
+        })
+        .sort((a, b) => {
+          if (a.periodsPerWeek !== b.periodsPerWeek) return b.periodsPerWeek - a.periodsPerWeek;
+          return a.order - b.order;
+        });
+      return ranked[0]?.name ?? null;
+    };
+
+    const resolveReferenceSubjectName = (
+      sectionId: string,
+      logicalName: string,
+      usedNames: Set<string>
+    ): string | null => {
+      switch (logicalName) {
+        case '2nd Language':
+          return pickBucketSubjectName(sectionId, LANGUAGE_BUCKET_SUBJECTS, usedNames);
+        case '3rd Language':
+          return pickBucketSubjectName(sectionId, ['French', 'Nepali', 'Hindi'], usedNames);
+        case 'Work Experience':
+          return pickBucketSubjectName(sectionId, WORK_EXPERIENCE_BUCKET_SUBJECTS, usedNames);
+        case 'Science':
+          return pickBucketSubjectName(sectionId, SCIENCE_BUCKET_SUBJECTS, usedNames);
+        default:
+          return subjectByName.has(logicalName) ? logicalName : null;
+      }
+    };
+
+    const pickTeacherForSubject = (
+      sectionId: string,
+      subject: typeof subjects[number]
+    ): typeof teachers[number] | null => {
+      const grade = sectionGradeMap.get(sectionId) ?? '';
+      const sameGradeSubjectCount = new Map<string, number>();
+
+      for (const a of assignments) {
+        if (a.subjectId !== subject.id) continue;
+        if ((sectionGradeMap.get(a.sectionId) ?? '') !== grade) continue;
+        sameGradeSubjectCount.set(a.teacherId, (sameGradeSubjectCount.get(a.teacherId) ?? 0) + 1);
+      }
+
+      const scoreTeacher = (teacher: typeof teachers[number]) => {
+        const target = Math.max(teacher.targetWorkload, 1);
+        const projected = projectedTeacherLoad.get(teacher.id) ?? 0;
+        const ratio = projected / target;
+        const classTeacherBoost = sectionClassTeacherMap.get(sectionId) === teacher.id ? -1 : 0;
+        const sameSubjectBoost = -(sameGradeSubjectCount.get(teacher.id) ?? 0);
+        return { classTeacherBoost, sameSubjectBoost, ratio, projected, abbreviation: teacher.abbreviation };
+      };
+
+      const eligible = teachers.filter(t => teacherCanCoverSubject(t as any, subject, grade));
+      const relaxed = teachers.filter(
+        t => teacherCanCoverSubject({ ...t, teachableGrades: '[]' } as any, subject, grade)
+      );
+      const pool = eligible.length > 0 ? eligible : relaxed;
+      if (pool.length === 0) return null;
+
+      return [...pool].sort((a, b) => {
+        const sa = scoreTeacher(a);
+        const sb = scoreTeacher(b);
+        if (sa.classTeacherBoost !== sb.classTeacherBoost) return sa.classTeacherBoost - sb.classTeacherBoost;
+        if (sa.sameSubjectBoost !== sb.sameSubjectBoost) return sa.sameSubjectBoost - sb.sameSubjectBoost;
+        if (sa.ratio !== sb.ratio) return sa.ratio - sb.ratio;
+        if (sa.projected !== sb.projected) return sa.projected - sb.projected;
+        return sa.abbreviation.localeCompare(sb.abbreviation);
+      })[0] ?? null;
+    };
+
+    const referencePeriodsBySection = new Map<string, Map<string, number>>();
+    const allowedSubjectIdsBySection = new Map<string, Set<string>>();
+
+    for (const section of sections) {
+      const grade = sectionGradeMap.get(section.id) ?? '';
+      const template = REFERENCE_GRADE_REQUIREMENTS[grade];
+      if (!template) continue;
+
+      const usedNames = new Set<string>();
+      const periodsMap = new Map<string, number>();
+      const allowedSubjectIds = new Set<string>();
+
+      for (const [logicalName, periodsPerWeek] of Object.entries(template)) {
+        const resolvedName = resolveReferenceSubjectName(section.id, logicalName, usedNames);
+        if (!resolvedName) {
+          warnings.push(`[reference-skip] ${section.name} ${logicalName}: no matching subject in current data`);
+          continue;
+        }
+
+        usedNames.add(resolvedName);
+        const subject = subjectByName.get(resolvedName);
+        if (!subject) {
+          warnings.push(`[reference-missing-subject] ${section.name} ${resolvedName}: subject not found in DB`);
+          continue;
+        }
+
+        periodsMap.set(subject.id, (periodsMap.get(subject.id) ?? 0) + periodsPerWeek);
+        allowedSubjectIds.add(subject.id);
+
+        if (existingSectionTeacherMap.get(section.id)?.has(subject.id)) continue;
+
+        const teacher = pickTeacherForSubject(section.id, subject);
+        if (!teacher) {
+          warnings.push(`[missing-teacher] ${section.name} ${subject.name}: no eligible teacher for grade ${grade}`);
+          continue;
+        }
+
+        assignments.push({
+          teacherId: teacher.id,
+          subjectId: subject.id,
+          sectionId: section.id,
+          periodsPerWeek,
+          teacher: {
+            id: teacher.id,
+            abbreviation: teacher.abbreviation,
+            targetWorkload: teacher.targetWorkload,
+            department: teacher.department,
+            name: teacher.name,
+            teachableGrades: teacher.teachableGrades,
+          },
+          subject: {
+            id: subject.id,
+            name: subject.name,
+            code: subject.code,
+            requiresLab: subject.requiresLab,
+            isDoublePeriod: subject.isDoublePeriod,
+          },
+          section: {
+            id: section.id,
+            name: section.name,
+          },
+        });
+        existingSectionTeacherMap.get(section.id)?.set(subject.id, { teacherId: teacher.id, periodsPerWeek });
+        projectedTeacherLoad.set(teacher.id, (projectedTeacherLoad.get(teacher.id) ?? 0) + periodsPerWeek);
+        allocationNotes.push(`[auto-assignment] ${section.name} ${subject.name} -> ${teacher.abbreviation} (${periodsPerWeek}/wk)`);
+      }
+
+      referencePeriodsBySection.set(section.id, periodsMap);
+      allowedSubjectIdsBySection.set(section.id, allowedSubjectIds);
+    }
+
+    assignments = assignments.filter(a => {
+      const allowedSubjectIds = allowedSubjectIdsBySection.get(a.sectionId);
+      return !allowedSubjectIds || allowedSubjectIds.has(a.subjectId);
+    });
+
     const sectionTeacherMap = new Map<string, Map<string, { teacherId: string; periodsPerWeek: number }>>();
     for (const section of sections) {
       sectionTeacherMap.set(section.id, new Map());
@@ -780,27 +1033,18 @@ export async function POST(request: NextRequest) {
 
     for (const a of assignments) {
       const map = sectionTeacherMap.get(a.sectionId);
-      if (map) {
-        map.set(a.subjectId, { teacherId: a.teacherId, periodsPerWeek: a.periodsPerWeek });
-      }
+      if (!map) continue;
+      const overridePeriods = referencePeriodsBySection.get(a.sectionId)?.get(a.subjectId);
+      map.set(a.subjectId, {
+        teacherId: a.teacherId,
+        periodsPerWeek: overridePeriods ?? a.periodsPerWeek,
+      });
     }
 
     // Determine effective periodsPerWeek for each (section, subject)
     // For VI–X: use SUBJECT_PERIODS table. For XI–XII: use DB value.
-    const getPeriodsPerWeek = (sectionId: string, subjectId: string): number => {
-      const grade = sectionGradeMap.get(sectionId) ?? '';
-      const subjectObj = subjects.find(s => s.id === subjectId);
-      if (!subjectObj) return 0;
-
-      const freqTable = SUBJECT_PERIODS[grade];
-      if (freqTable && freqTable[subjectObj.name] !== undefined) {
-        return freqTable[subjectObj.name];
-      }
-
-      // XI/XII: use DB-defined periodsPerWeek
-      const map = sectionTeacherMap.get(sectionId);
-      return map?.get(subjectId)?.periodsPerWeek ?? 0;
-    };
+    const getPeriodsPerWeek = (sectionId: string, subjectId: string): number =>
+      sectionTeacherMap.get(sectionId)?.get(subjectId)?.periodsPerWeek ?? 0;
 
     if (process.env.NODE_ENV === 'development') {
       console.log(`Layer 1 complete: ${assignments.length} primary assignments, ${labAssistants.length} lab-assistant assignments`);
@@ -837,14 +1081,15 @@ export async function POST(request: NextRequest) {
       if ((subjectName === 'Yoga' || subjectName === 'Aerobics') &&
           NO_YOGA_GRADES.has(sectionGradeMap.get(sectionId) ?? '')) return false;
 
-      // W.E. only for VI–IX
+      // W.E. only for VI–X
       if (WE_SUBJECTS.has(subjectName)) {
         const grade = sectionGradeMap.get(sectionId) ?? '';
-        if (grade === 'X' || grade === 'XI' || grade === 'XII') return false;
+        if (grade === 'XI' || grade === 'XII') return false;
       }
 
       // Games slot cap
       if (subjectName === 'Games') {
+        if (!slot || slot.periodNumber <= 2) return false;
         if ((gamesSlotCount.get(key) ?? 0) >= MAX_GAMES_PER_SLOT) return false;
       }
 
@@ -1026,6 +1271,70 @@ export async function POST(request: NextRequest) {
       return null;
     };
 
+    const pickRelaxedSlot = (
+      sectionId: string,
+      subjectId: string,
+      teacherId: string,
+      subjectName: string,
+    ): { dayId: string; slotId: string } | null => {
+      const candidateDays = [...days].sort((a, b) => {
+        const aLoad = sectionDailyLoad.get(sectionId)?.get(a.id) ?? 0;
+        const bLoad = sectionDailyLoad.get(sectionId)?.get(b.id) ?? 0;
+        return aLoad - bLoad;
+      });
+      const sectionObj = sections.find(s => s.id === sectionId);
+      const subjectObj = subjects.find(s => s.id === subjectId);
+      const teacherObj = teachers.find(t => t.id === teacherId);
+      if (!sectionObj || !subjectObj || !teacherObj) return null;
+
+      let bestScore = Number.NEGATIVE_INFINITY;
+      let bestPick: { dayId: string; slotId: string; dayOrder: number } | null = null;
+
+      for (const day of candidateDays) {
+        for (const ts of timeSlots) {
+          if (!canPlace(teacherId, sectionId, day.id, ts.id, subjectId, subjectName, true)) continue;
+          if (subjectObj.requiresLab) {
+            const labCandidates = getAllowedLabRooms(subjectId, sectionId);
+            if (labCandidates.length > 0 && !findAvailableLabRoom(subjectId, sectionId, day.id, ts.id)) {
+              continue;
+            }
+          }
+          const score = scoreSlot({
+            section: { id: sectionObj.id, name: sectionObj.name },
+            dayId: day.id,
+            timeSlotId: ts.id,
+            teacher: { id: teacherObj.id, abbreviation: teacherObj.abbreviation },
+            subject: { id: subjectObj.id, name: subjectName, requiresLab: subjectObj.requiresLab },
+            state: {
+              timeSlots,
+              teacherDailyLoad,
+              sectionDailyLoad,
+              sectionDaySubjects,
+              sectionClassTeacherMap,
+              teacherPeriodsByDay,
+              roomSubjectMap,
+              roomBusy,
+              maxSectionPerDay,
+              teacherMaxPerDay,
+              morningPreferenceByPeriod,
+              endPreferenceByPeriod,
+              scoringWeights,
+              getAllowedLabRooms,
+            },
+          });
+          if (
+            score > bestScore ||
+            (score === bestScore && (!bestPick || day.dayOrder < bestPick.dayOrder))
+          ) {
+            bestScore = score;
+            bestPick = { dayId: day.id, slotId: ts.id, dayOrder: day.dayOrder };
+          }
+        }
+      }
+
+      return bestPick ? { dayId: bestPick.dayId, slotId: bestPick.slotId } : null;
+    };
+
     // ── STEP C: Place constrained subjects first ─────────────────────────────
     // Priority order: Labs → Games → W.E. → Yoga → Library → Innovation
     if (process.env.NODE_ENV === 'development') { console.log('Step C: Placing constrained subjects...'); }
@@ -1088,7 +1397,9 @@ export async function POST(request: NextRequest) {
 
       // Place remaining periods using spread logic
       while (remaining > 0) {
-        const pick = pickSpreadDay(sectionId, subjectId, teacherId, subject.name);
+        const pick =
+          pickSpreadDay(sectionId, subjectId, teacherId, subject.name) ??
+          pickRelaxedSlot(sectionId, subjectId, teacherId, subject.name);
         if (!pick) break;
         if (assign(sectionId, pick.dayId, pick.slotId, subjectId, teacherId)) {
           remaining--;
@@ -1158,25 +1469,17 @@ export async function POST(request: NextRequest) {
       while (remaining > 0) {
         const pick = pickSpreadDay(sectionId, subjectId, teacherId, subject.name);
         if (!pick) {
-          // Try with relaxed constraints
-          let placed = false;
-          for (const day of days) {
-            for (const ts of timeSlots) {
-              if (canPlace(teacherId, sectionId, day.id, ts.id, subjectId, subject.name, true)) {
-                if (assign(sectionId, day.id, ts.id, subjectId, teacherId)) {
-                  remaining--;
-                  if (HEAVY_SUBJECTS.has(subject.name)) {
-                    const hdKey = `${sectionId}|${day.id}`;
-                    sectionDayHeavyCount.set(hdKey, (sectionDayHeavyCount.get(hdKey) ?? 0) + 1);
-                  }
-                  placed = true;
-                  break;
-                }
-              }
+          const relaxedPick = pickRelaxedSlot(sectionId, subjectId, teacherId, subject.name);
+          if (!relaxedPick) break;
+          if (assign(sectionId, relaxedPick.dayId, relaxedPick.slotId, subjectId, teacherId)) {
+            remaining--;
+            if (HEAVY_SUBJECTS.has(subject.name)) {
+              const hdKey = `${sectionId}|${relaxedPick.dayId}`;
+              sectionDayHeavyCount.set(hdKey, (sectionDayHeavyCount.get(hdKey) ?? 0) + 1);
             }
-            if (placed) break;
+          } else {
+            break;
           }
-          if (!placed) break;
         } else {
           if (assign(sectionId, pick.dayId, pick.slotId, subjectId, teacherId)) {
             remaining--;
@@ -1432,9 +1735,11 @@ export async function POST(request: NextRequest) {
       _count: { id: true },
       where: { teacherId: { not: null } },
     });
-    const countMap = new Map(
-      slotCounts.filter(r => r.teacherId).map(r => [r.teacherId as string, r._count.id])
-    );
+    const countMap = preview
+      ? new Map(teachers.map(t => [t.id, teacherLoad.get(t.id) ?? 0]))
+      : new Map(
+          slotCounts.filter(r => r.teacherId).map(r => [r.teacherId as string, r._count.id])
+        );
     if (!preview) {
       await Promise.all(
         teachers.map(t =>
@@ -1567,6 +1872,7 @@ export async function POST(request: NextRequest) {
       method: 'two-layer heuristic',
       unassigned: unassigned.length > 0 ? unassigned.slice(0, 30) : undefined,
       warnings: warnings.length > 0 ? warnings : undefined,
+      allocationNotes: allocationNotes.length > 0 ? allocationNotes : undefined,
       labRepair: labRepair ?? undefined,
       preview,
       previewSlots: preview
@@ -1730,6 +2036,64 @@ function scoreSlot(input: ScoreSlotInput): number {
   }
 
   return score;
+}
+
+function parseTeachableGrades(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function teacherCanCoverSubject(
+  teacher: { department: string; teachableGrades: string; isActive?: boolean | null },
+  subject: { name: string; category: string },
+  grade: string
+): boolean {
+  if (teacher.isActive === false) return false;
+
+  const grades = parseTeachableGrades(teacher.teachableGrades);
+  if (grades.length > 0 && !grades.includes(grade)) return false;
+
+  const dept = teacher.department.toLowerCase();
+  const subjectName = subject.name.toLowerCase();
+
+  if (dept === 'lab' || dept === 'counselling') return false;
+  if (dept === 'sports' && subjectName === 'games') return true;
+  if (dept === 'yoga' && (subjectName === 'yoga' || subjectName === 'aerobics')) return true;
+  if (dept === 'library' && subjectName === 'library') return true;
+
+  if (subjectName === 'work experience') {
+    return ['art', 'dance', 'music'].includes(dept) || dept === 'work experience';
+  }
+
+  if (subject.category === 'Activity') {
+    return ['art', 'dance', 'music', 'sports', 'yoga', 'library'].includes(dept) ||
+      dept === subjectName;
+  }
+
+  if (subject.category === 'Commerce') return dept === 'commerce' || dept === 'economics';
+  if (subjectName === 'economics') return dept === 'economics' || dept === 'commerce';
+  if (subjectName === 'geography' || subjectName === 'history' || subjectName === 'social studies') {
+    return dept === 'social studies';
+  }
+  if (subjectName === 'hindi') return dept === 'hindi';
+  if (subjectName === 'nepali') return dept === 'nepali';
+  if (subjectName === 'french') return dept === 'french';
+  if (subjectName === 'home science') return dept === 'home science';
+  if (subjectName === 'informatics practices') return dept === 'computer science';
+  if (subjectName === 'computer science') return dept === 'computer science';
+  if (subjectName === 'mathematics') return dept === 'mathematics';
+  if (subjectName === 'english') return dept === 'english';
+  if (subjectName === 'physics') return dept === 'physics';
+  if (subjectName === 'chemistry') return dept === 'chemistry';
+  if (subjectName === 'biology') return dept === 'biology';
+  if (subjectName === 'science') return ['biology', 'physics', 'chemistry', 'science'].includes(dept);
+
+  return dept === subjectName;
 }
 
 // ─── GET — generation status ──────────────────────────────────────────────────

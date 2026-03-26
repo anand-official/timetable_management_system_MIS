@@ -9,14 +9,34 @@ import { Label } from '@/components/ui/label';
 
 const AUTH_COOKIE_NAME = 'mis-access';
 
+type AuthPageSearchParams = Promise<{
+  next?: string | string[];
+  error?: string | string[];
+}>;
+
+function readSearchParam(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isAuthEnabled() {
+  return (process.env.AUTH_ENABLED ?? 'true').toLowerCase() !== 'false';
+}
+
 export default async function AuthPage({
   searchParams,
 }: {
-  searchParams?: { next?: string };
+  searchParams?: AuthPageSearchParams;
 }) {
+  if (!isAuthEnabled()) {
+    redirect('/');
+  }
+
   const cookieStore = await cookies();
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const nextCandidate = readSearchParam(resolvedSearchParams.next);
+  const errorCode = readSearchParam(resolvedSearchParams.error);
   const isAuthenticated = cookieStore.get(AUTH_COOKIE_NAME)?.value === 'granted';
-  const nextPath = searchParams?.next && searchParams.next.startsWith('/') ? searchParams.next : '/';
+  const nextPath = nextCandidate?.startsWith('/') ? nextCandidate : '/';
 
   if (isAuthenticated) {
     redirect(nextPath);
@@ -34,6 +54,11 @@ export default async function AuthPage({
         <CardContent>
           <form method="POST" action="/api/auth" className="space-y-4">
             <input type="hidden" name="next" value={nextPath} />
+            {errorCode === 'invalid-code' ? (
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                The access code was incorrect. Try again.
+              </p>
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor="code">Secret code</Label>
               <Input id="code" name="code" type="password" autoComplete="one-time-code" required />

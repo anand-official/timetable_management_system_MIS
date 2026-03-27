@@ -1745,46 +1745,46 @@ export default function TimetableManagementSystem() {
             </div>
 
             {/* Departments Overview */}
-            <div className="bg-white rounded-2xl card-shadow overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                  <Award className="h-4 w-4 text-indigo-500" /> Teachers by Department
+            <div className="bg-white dark:bg-slate-900 rounded-2xl card-shadow overflow-hidden border border-slate-100 dark:border-slate-800">
+              <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <Award className="h-4 w-4 text-indigo-500 dark:text-indigo-400" /> Teachers by Department
                 </h2>
-                <span className="text-xs text-slate-500">{departments.length} departments</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">{departments.length} departments</span>
               </div>
               <div className="p-6">
                 <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {[
-                    { name: 'English', color: 'bg-blue-500', light: 'bg-blue-50' },
-                    { name: 'Physics', color: 'bg-violet-500', light: 'bg-violet-50' },
-                    { name: 'Chemistry', color: 'bg-emerald-500', light: 'bg-emerald-50' },
-                    { name: 'Biology', color: 'bg-green-500', light: 'bg-green-50' },
-                    { name: 'Mathematics', color: 'bg-indigo-500', light: 'bg-indigo-50' },
-                    { name: 'Hindi', color: 'bg-orange-500', light: 'bg-orange-50' },
-                    { name: 'Nepali', color: 'bg-amber-500', light: 'bg-amber-50' },
-                    { name: 'Commerce', color: 'bg-teal-500', light: 'bg-teal-50' },
-                    { name: 'Economics', color: 'bg-cyan-500', light: 'bg-cyan-50' },
-                    { name: 'Social Studies', color: 'bg-rose-500', light: 'bg-rose-50' },
-                    { name: 'Computer Science', color: 'bg-fuchsia-500', light: 'bg-fuchsia-50' },
-                    { name: 'Sports', color: 'bg-lime-500', light: 'bg-lime-50' },
+                    { name: 'English', color: 'bg-blue-500', light: 'bg-blue-50 dark:bg-blue-500/12 dark:border-blue-500/20' },
+                    { name: 'Physics', color: 'bg-violet-500', light: 'bg-violet-50 dark:bg-violet-500/12 dark:border-violet-500/20' },
+                    { name: 'Chemistry', color: 'bg-emerald-500', light: 'bg-emerald-50 dark:bg-emerald-500/12 dark:border-emerald-500/20' },
+                    { name: 'Biology', color: 'bg-green-500', light: 'bg-green-50 dark:bg-green-500/12 dark:border-green-500/20' },
+                    { name: 'Mathematics', color: 'bg-indigo-500', light: 'bg-indigo-50 dark:bg-indigo-500/12 dark:border-indigo-500/20' },
+                    { name: 'Hindi', color: 'bg-orange-500', light: 'bg-orange-50 dark:bg-orange-500/12 dark:border-orange-500/20' },
+                    { name: 'Nepali', color: 'bg-amber-500', light: 'bg-amber-50 dark:bg-amber-500/12 dark:border-amber-500/20' },
+                    { name: 'Commerce', color: 'bg-teal-500', light: 'bg-teal-50 dark:bg-teal-500/12 dark:border-teal-500/20' },
+                    { name: 'Economics', color: 'bg-cyan-500', light: 'bg-cyan-50 dark:bg-cyan-500/12 dark:border-cyan-500/20' },
+                    { name: 'Social Studies', color: 'bg-rose-500', light: 'bg-rose-50 dark:bg-rose-500/12 dark:border-rose-500/20' },
+                    { name: 'Computer Science', color: 'bg-fuchsia-500', light: 'bg-fuchsia-50 dark:bg-fuchsia-500/12 dark:border-fuchsia-500/20' },
+                    { name: 'Sports', color: 'bg-lime-500', light: 'bg-lime-50 dark:bg-lime-500/12 dark:border-lime-500/20' },
                   ].map(({ name, color, light }) => {
                     const deptTeachers = teachers.filter(t => t.department === name);
                     if (deptTeachers.length === 0) return null;
                     return (
-                      <div key={name} className={`${light} rounded-xl p-3.5 border border-white hover:shadow-md transition-shadow duration-200`}>
+                      <div key={name} className={`${light} rounded-xl p-3.5 border border-white/80 dark:border-slate-800 hover:shadow-md dark:hover:shadow-black/20 transition-shadow duration-200`}>
                         <div className="flex items-center gap-2 mb-2">
                           <div className={`h-2 w-2 rounded-full ${color}`} />
-                          <h3 className="font-semibold text-sm text-slate-800 truncate">{name}</h3>
+                          <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">{name}</h3>
                         </div>
-                        <p className="text-xs text-slate-500 mb-2">{deptTeachers.length} teacher{deptTeachers.length !== 1 ? 's' : ''}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">{deptTeachers.length} teacher{deptTeachers.length !== 1 ? 's' : ''}</p>
                         <div className="flex flex-wrap gap-1">
                           {deptTeachers.slice(0, 3).map(t => (
-                            <span key={t.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white/80 text-slate-700 border border-white shadow-sm">
+                            <span key={t.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white/85 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 border border-white dark:border-slate-700 shadow-sm">
                               {t.abbreviation}
                             </span>
                           ))}
                           {deptTeachers.length > 3 && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white/60 text-slate-500 border border-white">
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white/60 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 border border-white dark:border-slate-700">
                               +{deptTeachers.length - 3}
                             </span>
                           )}

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { GraduationCap, Lock, ArrowRight } from 'lucide-react';
@@ -59,9 +60,12 @@ export default async function AuthPage({
               className="h-20 w-20 rounded-2xl flex items-center justify-center shadow-xl overflow-hidden"
               style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
             >
-              <img
-                src="/logo.png"
+              <Image
+                src="/logo.svg"
                 alt="Modern Indian School"
+                width={80}
+                height={80}
+                priority
                 className="h-full w-full object-contain p-2"
               />
             </div>

@@ -25,7 +25,7 @@ export async function GET(
 
   // ── Load data ───────────────────────────────────────────────────────────────
   const [section, slots, days, timeSlots, schoolConfig] = await Promise.all([
-    db.section.findUnique({ where: { id: sectionId } }),
+    db.section.findUnique({ where: { id: sectionId }, include: { classTeacher: true } }),
     db.timetableSlot.findMany({
       where:   { sectionId },
       include: { day: true, timeSlot: true, subject: true, teacher: true, labTeacher: true },
@@ -41,7 +41,7 @@ export async function GET(
   }
 
   // ── Build grid ──────────────────────────────────────────────────────────────
-  const grid = buildClassGrid(section.name, slots, days, timeSlots);
+  const grid = buildClassGrid(section.name, slots, days, timeSlots, section.classTeacher?.name ?? null);
   const sn = schoolConfig?.schoolName?.trim() || 'Modern Indian School';
   const yr = schoolConfig?.academicYear?.trim() || '2026-27';
   grid.subtitle = `${sn}  |  Academic Year ${yr}`;

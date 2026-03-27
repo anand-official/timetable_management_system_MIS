@@ -121,6 +121,7 @@ export function buildClassGrid(
   slots: RawSlot[],
   days: DayInfo[],
   periods: PeriodInfo[],
+  classTeacherName?: string | null,
 ): TimetableGrid {
   const sortedDays = [...days].sort((a, b) => a.dayOrder - b.dayOrder);
   const sortedPeriods = getSectionDisplayTimeSlots(
@@ -143,7 +144,9 @@ export function buildClassGrid(
   detectLabPairs(cells);
 
   return {
-    title: `Class Timetable - ${sectionName}`,
+    title: classTeacherName
+      ? `Class Timetable - ${sectionName} (${classTeacherName})`
+      : `Class Timetable - ${sectionName}`,
     subtitle: 'Modern Indian School  |  Academic Year 2026-27',
     days: sortedDays,
     periods: sortedPeriods,

@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
       } else {
         grids = sections.map(sec => {
           const slots = allSlots.filter(s => s.sectionId === sec.id);
-          const g = buildClassGrid(sec.name, slots, days, timeSlots);
+          const g = buildClassGrid(sec.name, slots, days, timeSlots, sec.classTeacher?.name ?? null);
           g.subtitle = subtitle;
           return g;
         });
@@ -193,7 +193,7 @@ export async function GET(request: NextRequest) {
       } else {
         grids = sections.map(sec => {
           const slots = allSlots.filter(s => s.sectionId === sec.id);
-          const g = buildClassGrid(sec.name, slots, days, timeSlots);
+          const g = buildClassGrid(sec.name, slots, days, timeSlots, sec.classTeacher?.name ?? null);
           g.subtitle = subtitle;
           return g;
         });

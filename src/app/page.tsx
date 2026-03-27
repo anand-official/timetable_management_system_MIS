@@ -1821,7 +1821,11 @@ export default function TimetableManagementSystem() {
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div>
                     <h2 className="text-base font-semibold text-slate-900">Class Timetable</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Click any cell to edit · Lock icon to preserve during regeneration</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {selectedSectionInfo
+                        ? `${selectedSectionInfo.name} · Class Teacher: ${selectedSectionInfo.classTeacher?.name ?? 'Not assigned'}`
+                        : 'Click any cell to edit · Lock icon to preserve during regeneration'}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Select value={selectedSection} onValueChange={setSelectedSection}>

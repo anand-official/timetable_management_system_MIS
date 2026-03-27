@@ -86,6 +86,12 @@ function teacherAbbreviationLabel(slot: RawSlot) {
   return getSlotTeacherAbbreviations(slot).join(' + ');
 }
 
+function subjectCodeLabel(slot: RawSlot): string {
+  const combinedDisplay = getCombinedSlotDisplay(slot.notes);
+  if (slot.isWE) return 'W.E.';
+  return combinedDisplay?.code ?? slot.subject?.code ?? slot.subject?.name ?? '-';
+}
+
 function slotTypeLabel(slot: RawSlot): string | undefined {
   if (slot.isLab) return 'Lab';
   if (slot.isGames) return 'Games';
@@ -101,11 +107,8 @@ function formatTimeRange(startTime: string, endTime: string) {
 }
 
 function makeCell(slot: RawSlot, line2: string, line3?: string): CellData {
-  const combinedDisplay = getCombinedSlotDisplay(slot.notes);
   return {
-    line1: slot.isWE
-      ? 'W.E.'
-      : (combinedDisplay?.code ?? slot.subject?.code ?? slot.subject?.name ?? '-'),
+    line1: subjectCodeLabel(slot),
     line2,
     line3,
     isLab: slot.isLab ?? false,
@@ -200,6 +203,9 @@ export function buildTeacherGrid(
     sortedDays.map(day => {
       const group = slotMap.get(`${day.id}|${period.periodNumber}`);
       if (!group || group.length === 0) return null;
+      const subjectLabel = Array.from(
+        new Set(group.map((slot) => subjectCodeLabel(slot)).filter(Boolean))
+      ).join(' / ');
       const sectionLabel = Array.from(
         new Set(group.map((slot) => slot.section?.name).filter(Boolean))
       ).join(' / ');
@@ -218,7 +224,11 @@ export function buildTeacherGrid(
         ...Array.from(new Set(group.map((slot) => slot.room?.name).filter(Boolean))),
         ...Array.from(new Set(group.map((slot) => slotTypeLabel(slot)).filter(Boolean))),
       ].filter(Boolean);
-      return makeCell(group[0], sectionLabel, metaParts.join(' | ') || undefined);
+      const cell = makeCell(group[0], sectionLabel, metaParts.join(' | ') || undefined);
+      return {
+        ...cell,
+        line1: subjectLabel || cell.line1,
+      };
     })
   );
 

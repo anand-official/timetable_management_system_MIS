@@ -1119,6 +1119,14 @@ export default function TimetableManagementSystem() {
     };
   };
 
+  const getTeacherCellSubjectLabel = (cellSlots: TimetableSlot[]) =>
+    Array.from(
+      new Set(cellSlots.map((slot) => getDisplayedSubject(slot)?.code).filter(Boolean))
+    ).join(' / ');
+
+  const getTeacherCellRoomLabel = (cellSlots: TimetableSlot[]) =>
+    Array.from(new Set(cellSlots.map((slot) => slot.room?.name).filter(Boolean))).join(' / ');
+
   const getSlotTeacherAbbreviation = (slot: Partial<Pick<TimetableSlot, 'teacher' | 'labTeacher'>>) =>
     getCombinedSlotTeacherAbbreviations(slot).join(' + ');
 
@@ -2183,9 +2191,10 @@ export default function TimetableManagementSystem() {
                               {days.map(day => {
                                 const cellSlots = getTeacherCellSlots(teacherSlots, day.id, slot.id);
                                 const cellSlot = cellSlots[0];
-                                const displayedSubject = cellSlot ? getDisplayedSubject(cellSlot) : null;
                                 const sectionLabel = Array.from(new Set(cellSlots.map((item) => item.section?.name).filter(Boolean))).join(' / ');
+                                const subjectLabel = getTeacherCellSubjectLabel(cellSlots);
                                 const cellTimeLabel = getTeacherCellTimeLabel(cellSlots);
+                                const roomLabel = getTeacherCellRoomLabel(cellSlots);
                                 const showCellTimeLabel = Boolean(cellTimeLabel) && cellTimeLabel !== formatDisplayTimeRange(slot.startTime, slot.endTime);
                                 return (
                                   <TableCell key={day.id} className="p-1.5">
@@ -2202,12 +2211,12 @@ export default function TimetableManagementSystem() {
                                             : <Unlock className="h-3 w-3 text-slate-300 hover:text-slate-500" />}
                                         </button>
                                         <div className="font-bold text-sm text-indigo-700">{sectionLabel || cellSlot.section?.name}</div>
-                                        <div className="text-[11px] text-slate-500 font-medium">{displayedSubject?.code}</div>
+                                        <div className="text-[11px] text-slate-500 font-medium">{subjectLabel}</div>
                                         {showCellTimeLabel && (
                                           <div className="text-[10px] text-slate-400">{cellTimeLabel}</div>
                                         )}
-                                        {cellSlot.room?.name && (
-                                          <div className="text-[10px] text-slate-400">{cellSlot.room.name}</div>
+                                        {roomLabel && (
+                                          <div className="text-[10px] text-slate-400">{roomLabel}</div>
                                         )}
                                       </div>
                                     ) : (

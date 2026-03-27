@@ -46,7 +46,11 @@ import {
   getSlotTeacherAbbreviations as getCombinedSlotTeacherAbbreviations,
   getSlotTeacherNames as getCombinedSlotTeacherNames,
 } from '@/lib/combined-slot';
-import { getSectionDisplayTimeSlots } from '@/lib/section-time-slots';
+import {
+  getSectionDisplayTimeSlot,
+  getSectionDisplayTimeSlots,
+  getTeacherDisplayTimeSlots,
+} from '@/lib/section-time-slots';
 
 // Types
 interface Teacher {
@@ -1082,6 +1086,20 @@ export default function TimetableManagementSystem() {
   const getTeacherCellSlots = (teacherSlots: TimetableSlot[], dayId: string, timeSlotId: string) =>
     teacherSlots.filter((slot) => slot.dayId === dayId && slot.timeSlotId === timeSlotId);
 
+  const formatDisplayTimeRange = (startTime: string, endTime: string) => `${startTime}-${endTime}`;
+
+  const getTeacherCellTimeLabel = (cellSlots: TimetableSlot[]) => {
+    const labels = Array.from(
+      new Set(
+        cellSlots.map((slot) => {
+          const displaySlot = getSectionDisplayTimeSlot(slot.section?.name, slot.timeSlot);
+          return formatDisplayTimeRange(displaySlot.startTime, displaySlot.endTime);
+        })
+      )
+    );
+    return labels.join(' / ');
+  };
+
   // Get slot for specific day/period
   const getSlot = (sectionSlots: TimetableSlot[], dayId: string, timeSlotId: string) => {
     return sectionSlots.find(s => s.dayId === dayId && s.timeSlotId === timeSlotId);
@@ -1190,6 +1208,8 @@ export default function TimetableManagementSystem() {
   const fillerSlotsCount = slots.filter((s: any) => s.isFiller).length;
   const selectedSectionInfo = sections.find((section) => section.id === selectedSection);
   const displayedClassTimeSlots = getSectionDisplayTimeSlots(selectedSectionInfo?.name, timeSlots);
+  const selectedTeacherSlots = selectedTeacher ? getTeacherTimetable(selectedTeacher) : [];
+  const displayedTeacherTimeSlots = getTeacherDisplayTimeSlots(selectedTeacherSlots, timeSlots);
 
   useEffect(() => {
     if (!selectedTeacher && teachers.length > 0) return;
@@ -1484,6 +1504,9 @@ export default function TimetableManagementSystem() {
                   <DropdownMenuItem onClick={() => handleExport('pdf', 'class')} className="rounded-lg">
                     <FileText className="h-4 w-4 mr-2 text-red-500" /> PDF (multi-page)
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport('csv', 'class')} className="rounded-lg">
+                    <FileSpreadsheet className="h-4 w-4 mr-2 text-blue-600" /> CSV (flat file)
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel className="text-xs text-slate-500">All teachers</DropdownMenuLabel>
                   <DropdownMenuItem onClick={() => handleExport('excel', 'teacher')} className="rounded-lg">
@@ -1492,15 +1515,11 @@ export default function TimetableManagementSystem() {
                   <DropdownMenuItem onClick={() => handleExport('pdf', 'teacher')} className="rounded-lg">
                     <FileText className="h-4 w-4 mr-2 text-red-500" /> PDF (multi-page)
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport('csv', 'teacher')} className="rounded-lg">
+                    <FileSpreadsheet className="h-4 w-4 mr-2 text-blue-600" /> CSV (flat file)
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button
-                variant="outline" size="sm"
-                onClick={() => handleExport('csv')}
-                className="border-slate-200 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 gap-1.5 rounded-lg"
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5 text-blue-500" /> CSV
-              </Button>
             </div>
           </div>
         </header>
@@ -1856,6 +1875,21 @@ export default function TimetableManagementSystem() {
                             const name = sections.find(s => s.id === selectedSection)?.name ?? 'class';
                             const safe = name.replace(/[^A-Za-z0-9]/g, '_');
                             void downloadTimetableFile(
+                              `/api/timetable/export/class/${selectedSection}?format=csv`,
+                              `timetable_${safe}.csv`
+                            );
+                          }}
+                          title="Download CSV"
+                        >
+                          <FileSpreadsheet className="h-4 w-4 mr-1" /> CSV
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const name = sections.find(s => s.id === selectedSection)?.name ?? 'class';
+                            const safe = name.replace(/[^A-Za-z0-9]/g, '_');
+                            void downloadTimetableFile(
                               `/api/timetable/export/class/${selectedSection}?format=pdf`,
                               `timetable_${safe}.pdf`
                             );
@@ -2028,6 +2062,21 @@ export default function TimetableManagementSystem() {
                             const t = teachers.find(x => x.id === selectedTeacher);
                             const safe = (t?.abbreviation ?? 'teacher').replace(/[^A-Za-z0-9]/g, '_');
                             void downloadTimetableFile(
+                              `/api/timetable/export/teacher/${selectedTeacher}?format=csv`,
+                              `timetable_${safe}.csv`
+                            );
+                          }}
+                          title="Download CSV"
+                        >
+                          <FileSpreadsheet className="h-4 w-4 mr-1" /> CSV
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const t = teachers.find(x => x.id === selectedTeacher);
+                            const safe = (t?.abbreviation ?? 'teacher').replace(/[^A-Za-z0-9]/g, '_');
+                            void downloadTimetableFile(
                               `/api/timetable/export/teacher/${selectedTeacher}?format=pdf`,
                               `timetable_${safe}.pdf`
                             );
@@ -2119,8 +2168,8 @@ export default function TimetableManagementSystem() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {timeSlots.map(slot => {
-                          const teacherSlots = getTeacherTimetable(selectedTeacher);
+                        {displayedTeacherTimeSlots.map(slot => {
+                          const teacherSlots = selectedTeacherSlots;
                           return (
                             <TableRow key={slot.id} className="border-b border-slate-50 hover:bg-slate-50/40 transition-colors">
                               <TableCell className="sticky left-0 bg-white border-r border-slate-100 z-10">
@@ -2136,6 +2185,8 @@ export default function TimetableManagementSystem() {
                                 const cellSlot = cellSlots[0];
                                 const displayedSubject = cellSlot ? getDisplayedSubject(cellSlot) : null;
                                 const sectionLabel = Array.from(new Set(cellSlots.map((item) => item.section?.name).filter(Boolean))).join(' / ');
+                                const cellTimeLabel = getTeacherCellTimeLabel(cellSlots);
+                                const showCellTimeLabel = Boolean(cellTimeLabel) && cellTimeLabel !== formatDisplayTimeRange(slot.startTime, slot.endTime);
                                 return (
                                   <TableCell key={day.id} className="p-1.5">
                                     {cellSlot ? (
@@ -2152,6 +2203,9 @@ export default function TimetableManagementSystem() {
                                         </button>
                                         <div className="font-bold text-sm text-indigo-700">{sectionLabel || cellSlot.section?.name}</div>
                                         <div className="text-[11px] text-slate-500 font-medium">{displayedSubject?.code}</div>
+                                        {showCellTimeLabel && (
+                                          <div className="text-[10px] text-slate-400">{cellTimeLabel}</div>
+                                        )}
                                         {cellSlot.room?.name && (
                                           <div className="text-[10px] text-slate-400">{cellSlot.room.name}</div>
                                         )}

@@ -7,7 +7,11 @@ import {
   getCombinedSlotDisplay,
   getSlotTeacherAbbreviations,
 } from '@/lib/combined-slot';
-import { getSectionDisplayTimeSlots } from '@/lib/section-time-slots';
+import {
+  getSectionDisplayTimeSlot,
+  getSectionDisplayTimeSlots,
+  getTeacherDisplayTimeSlots,
+} from '@/lib/section-time-slots';
 
 export interface DayInfo {
   id: string;
@@ -27,6 +31,8 @@ export interface CellData {
   line1: string;
   /** Teacher abbreviation (class view) or section name (teacher view) */
   line2: string;
+  /** Optional metadata line (for example room, actual time, or slot type) */
+  line3?: string;
   isLab: boolean;
   isGames: boolean;
   isYoga: boolean;
@@ -80,13 +86,28 @@ function teacherAbbreviationLabel(slot: RawSlot) {
   return getSlotTeacherAbbreviations(slot).join(' + ');
 }
 
-function makeCell(slot: RawSlot, line2: string): CellData {
+function slotTypeLabel(slot: RawSlot): string | undefined {
+  if (slot.isLab) return 'Lab';
+  if (slot.isGames) return 'Games';
+  if (slot.isYoga) return 'Yoga';
+  if (slot.isLibrary) return 'Library';
+  if (slot.isInnovation) return 'Innovation';
+  if (slot.isWE) return 'W.E.';
+  return undefined;
+}
+
+function formatTimeRange(startTime: string, endTime: string) {
+  return `${startTime}-${endTime}`;
+}
+
+function makeCell(slot: RawSlot, line2: string, line3?: string): CellData {
   const combinedDisplay = getCombinedSlotDisplay(slot.notes);
   return {
     line1: slot.isWE
       ? 'W.E.'
       : (combinedDisplay?.code ?? slot.subject?.code ?? slot.subject?.name ?? '-'),
     line2,
+    line3,
     isLab: slot.isLab ?? false,
     isGames: slot.isGames ?? false,
     isYoga: slot.isYoga ?? false,
@@ -137,7 +158,8 @@ export function buildClassGrid(
   const cells: (CellData | null)[][] = sortedPeriods.map(period =>
     sortedDays.map(day => {
       const s = slotMap.get(`${day.id}|${period.periodNumber}`);
-      return s ? makeCell(s, teacherAbbreviationLabel(s)) : null;
+      const metaParts = [s?.room?.name, slotTypeLabel(s)].filter(Boolean);
+      return s ? makeCell(s, teacherAbbreviationLabel(s), metaParts.join(' | ') || undefined) : null;
     })
   );
 
@@ -162,7 +184,10 @@ export function buildTeacherGrid(
   periods: PeriodInfo[],
 ): TimetableGrid {
   const sortedDays = [...days].sort((a, b) => a.dayOrder - b.dayOrder);
-  const sortedPeriods = [...periods].sort((a, b) => a.periodNumber - b.periodNumber);
+  const sortedPeriods = getTeacherDisplayTimeSlots(
+    slots,
+    [...periods].sort((a, b) => a.periodNumber - b.periodNumber)
+  );
 
   const slotMap = new Map<string, RawSlot[]>();
   for (const s of slots) {
@@ -178,7 +203,22 @@ export function buildTeacherGrid(
       const sectionLabel = Array.from(
         new Set(group.map((slot) => slot.section?.name).filter(Boolean))
       ).join(' / ');
-      return makeCell(group[0], sectionLabel);
+      const displayTimes = Array.from(
+        new Set(
+          group.map((slot) => {
+            const displayTimeSlot = getSectionDisplayTimeSlot(slot.section?.name ?? null, slot.timeSlot);
+            return formatTimeRange(displayTimeSlot.startTime, displayTimeSlot.endTime);
+          })
+        )
+      );
+      const metaParts = [
+        displayTimes.length === 1
+          ? (displayTimes[0] === formatTimeRange(period.startTime, period.endTime) ? undefined : displayTimes[0])
+          : displayTimes.join(' / '),
+        ...Array.from(new Set(group.map((slot) => slot.room?.name).filter(Boolean))),
+        ...Array.from(new Set(group.map((slot) => slotTypeLabel(slot)).filter(Boolean))),
+      ].filter(Boolean);
+      return makeCell(group[0], sectionLabel, metaParts.join(' | ') || undefined);
     })
   );
 

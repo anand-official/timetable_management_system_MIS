@@ -7,33 +7,19 @@ import { sortSectionsByGradeThenName } from '@/lib/section-sort';
 import { generateBulkTimetablePdf } from '@/lib/export/timetable-pdf';
 import { generateBulkTimetableXlsx } from '@/lib/export/timetable-xlsx';
 import type { TimetableGrid } from '@/lib/export/timetable-grid';
-import { getSectionDisplayTimeSlot } from '@/lib/section-time-slots';
 import {
   getAllSlotTeacherIds,
-  getCombinedSlotDisplay,
-  getSlotTeacherAbbreviations,
-  getSlotTeacherNames,
   slotHasTeacherId,
 } from '@/lib/combined-slot';
+import {
+  buildCsv,
+  getSlotDisplayFields,
+  schoolSubtitle,
+} from '@/lib/export/timetable-export';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-
-function schoolSubtitle(schoolName: string | null, academicYear: string | null): string {
-  const name = schoolName?.trim() || 'Modern Indian School';
-  const year = academicYear?.trim() || '2026-27';
-  return `${name}  |  Academic Year ${year}`;
-}
-
-function getTeacherExportLabel(slot: { teacher?: { name?: string | null; abbreviation?: string | null } | null; labTeacher?: { name?: string | null; abbreviation?: string | null } | null }) {
-  const names = getSlotTeacherNames(slot);
-  const abbreviations = getSlotTeacherAbbreviations(slot);
-  return {
-    names: names.join(' + '),
-    abbreviations: abbreviations.join(' + '),
-  };
-}
 
 // ── GET — Export timetable (CSV/JSON use flat rows; Excel/PDF use native TS generators) ──
 
@@ -67,12 +53,31 @@ export async function GET(request: NextRequest) {
       db.day.findMany({ orderBy: { dayOrder: 'asc' } }),
       db.timeSlot.findMany({ orderBy: { periodNumber: 'asc' } }),
       db.timetableSlot.findMany({
-        include: { day: true, timeSlot: true, subject: true, teacher: true, labTeacher: true, section: true },
+        include: {
+          day: true,
+          timeSlot: true,
+          subject: true,
+          teacher: true,
+          labTeacher: true,
+          room: true,
+          section: {
+            include: {
+              grade: true,
+              classTeacher: true,
+            },
+          },
+        },
       }),
       db.schoolConfig.findFirst(),
     ]);
 
     const sections = sortSectionsByGradeThenName(sectionsRaw);
+    const sectionOrderMap = new Map(sections.map((section, index) => [section.id, index]));
+    const sortedAllSlots = [...allSlots].sort((a, b) =>
+      (sectionOrderMap.get(a.sectionId) ?? Number.MAX_SAFE_INTEGER) - (sectionOrderMap.get(b.sectionId) ?? Number.MAX_SAFE_INTEGER) ||
+      a.day.dayOrder - b.day.dayOrder ||
+      a.timeSlot.periodNumber - b.timeSlot.periodNumber
+    );
     const teacherWorkloadMap = buildTeacherWorkloadMap(allSlots);
 
     const subtitle = schoolSubtitle(schoolConfig?.schoolName ?? null, schoolConfig?.academicYear ?? null);
@@ -98,20 +103,26 @@ export async function GET(request: NextRequest) {
         end: t.endTime,
         duration: t.duration,
       })),
-      timetable: allSlots.map(slot => {
-        const displayTimeSlot = getSectionDisplayTimeSlot(slot.section?.name ?? null, slot.timeSlot);
+      timetable: sortedAllSlots.map(slot => {
+        const displayFields = getSlotDisplayFields(slot);
         return {
           section: slot.section?.name ?? '',
           day: slot.day.name,
-          period: slot.timeSlot.periodNumber,
-          startTime: displayTimeSlot.startTime,
-          endTime: displayTimeSlot.endTime,
-          subject: getCombinedSlotDisplay(slot.notes)?.name ?? slot.subject?.name ?? '',
-          subjectCode: getCombinedSlotDisplay(slot.notes)?.code ?? slot.subject?.code ?? '',
-          teacher: getTeacherExportLabel(slot).names,
-          teacherAbbr: getTeacherExportLabel(slot).abbreviations,
-          labTeacher: slot.labTeacher?.name ?? '',
-          labTeacherAbbr: slot.labTeacher?.abbreviation ?? '',
+          period: displayFields.period,
+          startTime: displayFields.startTime,
+          endTime: displayFields.endTime,
+          timeRange: displayFields.timeRange,
+          grade: displayFields.grade,
+          classTeacher: displayFields.classTeacher,
+          subject: displayFields.subject,
+          subjectCode: displayFields.subjectCode,
+          teacher: displayFields.teacher,
+          teacherAbbr: displayFields.teacherAbbreviation,
+          labTeacher: displayFields.labTeacher,
+          labTeacherAbbr: displayFields.labTeacherAbbreviation,
+          room: displayFields.room,
+          slotType: displayFields.slotType,
+          notes: displayFields.notes,
           isLab: slot.isLab,
           isGames: slot.isGames,
           isYoga: slot.isYoga,
@@ -121,26 +132,112 @@ export async function GET(request: NextRequest) {
     };
 
     if (format === 'csv') {
-      let csv = 'Section,Day,Period,Start Time,End Time,Subject,Teacher,Lab Teacher\n';
-      for (const slot of allSlots) {
-        const teacherLabel = getTeacherExportLabel(slot);
-        const displayTimeSlot = getSectionDisplayTimeSlot(slot.section?.name ?? null, slot.timeSlot);
-        const row = [
-          slot.section?.name ?? '',
-          slot.day.name,
-          String(slot.timeSlot.periodNumber),
-          displayTimeSlot.startTime,
-          displayTimeSlot.endTime,
-          getCombinedSlotDisplay(slot.notes)?.name ?? slot.subject?.name ?? '',
-          teacherLabel.names,
-          slot.labTeacher?.name ?? '',
-        ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
-        csv += row + '\n';
+      if (type === 'teacher') {
+        const teacherRows = teachers.flatMap((teacher) =>
+          sortedAllSlots
+            .filter((slot) => slotHasTeacherId(slot, teacher.id))
+            .map((slot) => {
+              const displayFields = getSlotDisplayFields(slot);
+              return [
+                teacher.name,
+                teacher.abbreviation,
+                teacher.department,
+                slot.day.name,
+                displayFields.period,
+                displayFields.startTime,
+                displayFields.endTime,
+                displayFields.timeRange,
+                slot.section?.name ?? '',
+                displayFields.grade,
+                displayFields.subject,
+                displayFields.subjectCode,
+                displayFields.room,
+                displayFields.slotType,
+                displayFields.notes,
+              ];
+            })
+        );
+
+        return new NextResponse(
+          buildCsv(
+            [
+              'Teacher',
+              'Teacher Abbreviation',
+              'Department',
+              'Day',
+              'Period',
+              'Start Time',
+              'End Time',
+              'Time Range',
+              'Section',
+              'Grade',
+              'Subject',
+              'Subject Code',
+              'Room',
+              'Slot Type',
+              'Notes',
+            ],
+            teacherRows
+          ),
+          {
+            headers: {
+              'Content-Type': 'text/csv; charset=utf-8',
+              'Content-Disposition': 'attachment; filename="timetable_all_teachers.csv"',
+            },
+          }
+        );
       }
-      return new NextResponse(csv, {
+
+      const classRows = sortedAllSlots.map((slot) => {
+        const displayFields = getSlotDisplayFields(slot);
+        return [
+          slot.section?.name ?? '',
+          displayFields.grade,
+          displayFields.classTeacher,
+          slot.day.name,
+          displayFields.period,
+          displayFields.startTime,
+          displayFields.endTime,
+          displayFields.timeRange,
+          displayFields.subject,
+          displayFields.subjectCode,
+          displayFields.teacher,
+          displayFields.teacherAbbreviation,
+          displayFields.labTeacher,
+          displayFields.labTeacherAbbreviation,
+          displayFields.room,
+          displayFields.slotType,
+          displayFields.notes,
+        ];
+      });
+
+      return new NextResponse(
+        buildCsv(
+          [
+            'Section',
+            'Grade',
+            'Class Teacher',
+            'Day',
+            'Period',
+            'Start Time',
+            'End Time',
+            'Time Range',
+            'Subject',
+            'Subject Code',
+            'Teacher',
+            'Teacher Abbreviation',
+            'Lab Teacher',
+            'Lab Teacher Abbreviation',
+            'Room',
+            'Slot Type',
+            'Notes',
+          ],
+          classRows
+        ),
+        {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': 'attachment; filename="timetable.csv"',
+          'Content-Disposition': 'attachment; filename="timetable_all_classes.csv"',
         },
       });
     }

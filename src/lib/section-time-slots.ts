@@ -42,3 +42,33 @@ export function getSectionDisplayTimeSlot<T extends TimeSlotLike>(
 ): T {
   return getSectionDisplayTimeSlots(sectionName, [timeSlot])[0];
 }
+
+export function getTeacherDisplayTimeSlots<
+  T extends TimeSlotLike,
+  S extends { section?: { name?: string | null } | null; timeSlot: T }
+>(
+  slots: S[],
+  timeSlots: T[],
+): T[] {
+  const labelsByPeriod = new Map<number, T[]>();
+
+  for (const slot of slots) {
+    const displaySlot = getSectionDisplayTimeSlot(slot.section?.name ?? null, slot.timeSlot);
+    const existing = labelsByPeriod.get(displaySlot.periodNumber) ?? [];
+    if (!existing.some((item) => item.startTime === displaySlot.startTime && item.endTime === displaySlot.endTime)) {
+      existing.push(displaySlot);
+      labelsByPeriod.set(displaySlot.periodNumber, existing);
+    }
+  }
+
+  return timeSlots.map((timeSlot) => {
+    const displaySlots = labelsByPeriod.get(timeSlot.periodNumber) ?? [];
+    if (displaySlots.length === 1) {
+      return { ...timeSlot, ...displaySlots[0] };
+    }
+    if (displaySlots.length > 1) {
+      return { ...timeSlot, startTime: 'Varies', endTime: 'by class' };
+    }
+    return timeSlot;
+  });
+}

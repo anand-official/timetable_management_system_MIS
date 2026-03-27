@@ -90,13 +90,21 @@ function buildDataCell(cell: CellData | null, rowStripe: boolean): any {
   const bg          = cellColor(cell);
   const line1Color  = cell.isLab ? '#1D4ED8' : '#111827';
   const line2Color  = cell.isLab ? '#3B82F6' : '#4B5563';
+  const line3Color  = '#64748B';
+  const stack = [
+    { text: cell.line1, bold: true, fontSize: 9.5, color: line1Color },
+  ];
+
+  if (cell.line2) {
+    stack.push({ text: cell.line2, bold: false, fontSize: 8.5, color: line2Color });
+  }
+
+  if (cell.line3) {
+    stack.push({ text: cell.line3, bold: false, fontSize: 7.5, color: line3Color });
+  }
 
   return {
-    stack: [
-      { text: cell.line1, bold: true,  fontSize: 9.5,  color: line1Color },
-      { text: cell.line2, bold: false, fontSize: 8.5,  color: line2Color },
-      ...(cell.isLab ? [{ text: 'Lab', fontSize: 7, italics: true, color: '#93C5FD' }] : []),
-    ],
+    stack,
     alignment: 'center',
     margin: [3, 5, 3, 5],
     fillColor: bg,

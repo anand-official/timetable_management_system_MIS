@@ -91,8 +91,18 @@ function applyDataCell(
   cell.value = {
     richText: [
       { text: data.line1, font: { bold: true,  size: 10, color: { argb: data.isLab ? 'FF1D4ED8' : 'FF111827' } } },
-      { text: '\n' },
-      { text: data.line2, font: { bold: false, size: 9,  color: { argb: data.isLab ? 'FF3B82F6' : 'FF4B5563' } } },
+      ...(data.line2
+        ? [
+            { text: '\n' },
+            { text: data.line2, font: { bold: false, size: 9, color: { argb: data.isLab ? 'FF3B82F6' : 'FF4B5563' } } },
+          ]
+        : []),
+      ...(data.line3
+        ? [
+            { text: '\n' },
+            { text: data.line3, font: { bold: false, size: 8, color: { argb: 'FF64748B' } } },
+          ]
+        : []),
       ...(isLabMergeStart ? [{ text: '\nLab', font: { bold: false, size: 8, italic: true, color: { argb: 'FF93C5FD' } } }] : []),
     ],
   };

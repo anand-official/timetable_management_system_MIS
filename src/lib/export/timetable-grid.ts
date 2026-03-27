@@ -140,7 +140,7 @@ export function buildClassGrid(
 
   return {
     title: `Class Timetable - ${sectionName}`,
-    subtitle: 'Modern Indian School  |  Academic Year 2025-26',
+    subtitle: 'Modern Indian School  |  Academic Year 2026-27',
     days: sortedDays,
     periods: sortedPeriods,
     cells,
@@ -178,7 +178,7 @@ export function buildTeacherGrid(
   // No lab merging for teacher view -> different sections per lab slot
   return {
     title: `Teacher Timetable - ${teacherName} (${teacherAbbr})`,
-    subtitle: 'Modern Indian School  |  Academic Year 2025-26',
+    subtitle: 'Modern Indian School  |  Academic Year 2026-27',
     days: sortedDays,
     periods: sortedPeriods,
     cells,

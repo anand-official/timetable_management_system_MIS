@@ -5,7 +5,7 @@ import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "Modern Indian School — Timetable Management System",
-  description: "Automated conflict-free timetable generation for Modern Indian School 2025-26",
+  description: "Automated conflict-free timetable generation for Modern Indian School 2026-27",
 };
 
 export default function RootLayout({

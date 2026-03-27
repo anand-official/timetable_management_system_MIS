@@ -1,5 +1,6 @@
 export type CombinedSlotBucket = '2nd Language' | '3rd Language';
 export type CombinedSlotSharingMode = 'single' | 'grouped' | 'shared';
+export type CombinedSlotKind = 'language-block' | 'combined-slot';
 
 export interface CombinedSlotOption {
   subjectId: string;
@@ -13,9 +14,9 @@ export interface CombinedSlotOption {
 }
 
 export interface CombinedSlotMetadata {
-  kind: 'language-block';
-  bucket: CombinedSlotBucket;
-  grade: string;
+  kind: CombinedSlotKind;
+  bucket?: CombinedSlotBucket;
+  grade?: string;
   displayName: string;
   displayCode: string;
   options: CombinedSlotOption[];
@@ -47,7 +48,7 @@ export function parseCombinedSlotMetadata(notes?: string | null): CombinedSlotMe
     const parsed = JSON.parse(payload) as CombinedSlotMetadata;
     if (
       parsed &&
-      parsed.kind === 'language-block' &&
+      (parsed.kind === 'language-block' || parsed.kind === 'combined-slot') &&
       Array.isArray(parsed.options) &&
       typeof parsed.displayName === 'string' &&
       typeof parsed.displayCode === 'string'

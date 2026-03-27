@@ -215,14 +215,15 @@ const teachers = [
   { name: 'Ms. Anisha Subba', abbreviation: 'AS1', department: 'English', isHOD: false, targetWorkload: 26 },
   { name: 'Ms. Riya Kaushik', abbreviation: 'RK', department: 'English', isHOD: false, targetWorkload: 30 },
   { name: 'Ms. Farida Banu Ahmed', abbreviation: 'FBA', department: 'English', isHOD: false, targetWorkload: 12 },
-  { name: 'Ms. Rohini Agrawal', abbreviation: 'RA', department: 'English', isHOD: false, targetWorkload: 7 },
-  { name: 'Ms. Prini Sunil Kumar', abbreviation: 'PSK', department: 'Science', isHOD: false, targetWorkload: 6 },
+  { name: 'Ms. Rohini Agrawal', abbreviation: 'RA', department: 'English', isHOD: false, targetWorkload: 6 },
+  { name: 'Mr. Alister Fitzpatrick', abbreviation: 'AF', department: 'English', isHOD: false, targetWorkload: 24 },
+  { name: 'Ms. Prini Sunil Kumar', abbreviation: 'PSK', department: 'Chemistry', isHOD: false, targetWorkload: 6 },
   // PHYSICS
   { name: 'Mr. Surendra Pd. Karnasah', abbreviation: 'SPK', department: 'Physics', isHOD: true, targetWorkload: 24 },
   { name: 'Mr. Bishnu Datt Badu', abbreviation: 'BDB', department: 'Physics', isHOD: false, targetWorkload: 28 },
   { name: 'Mr. Buddhi Sagar Dotel', abbreviation: 'BSD', department: 'Physics', isHOD: false, targetWorkload: 25 },
   { name: 'Mr. Madan Kumar Gautam', abbreviation: 'MKG', department: 'Physics', isHOD: false, targetWorkload: 26 },
-  { name: 'Ms. Rakhi Malik', abbreviation: 'RM', department: 'Physics', isHOD: false, targetWorkload: 29 },
+  { name: 'Ms. Rakhi Malik', abbreviation: 'RM', department: 'Chemistry', isHOD: false, targetWorkload: 24 },
   // CHEMISTRY
   { name: 'Ms. Sangeeta Khwaounjoo', abbreviation: 'SKH', department: 'Chemistry', isHOD: true, targetWorkload: 29 },
   { name: 'Mr. Pradip Kumar Rajak', abbreviation: 'PKR', department: 'Chemistry', isHOD: false, targetWorkload: 29 },
@@ -281,23 +282,24 @@ const teachers = [
   // HOME SCIENCE
   { name: 'Ms. Lalita Khadka', abbreviation: 'LK', department: 'Home Science', isHOD: false, targetWorkload: 26 },
   // COMPUTER SCIENCE
-  { name: 'Mr. Pradip Kumar Thakur', abbreviation: 'PKT', department: 'Computer Science', isHOD: true, targetWorkload: 28 },
-  { name: 'Mr. Bibek Khadka', abbreviation: 'BK', department: 'Computer Science', isHOD: false, targetWorkload: 26 },
-  { name: 'Ms. Devi Roka Karki', abbreviation: 'DRK', department: 'Computer Science', isHOD: false, targetWorkload: 29 },
-  { name: 'Mr. Raman Khadka', abbreviation: 'RK2', department: 'Computer Science', isHOD: false, targetWorkload: 29 },
-  { name: 'Mr. Santosh Nepal', abbreviation: 'SN', department: 'Computer Science', isHOD: false, targetWorkload: 30 },
+  { name: 'Mr. Pradip Kumar Thakur', abbreviation: 'PKT', department: 'Computer Science', isHOD: true, targetWorkload: 27 },
+  { name: 'Mr. Bibek Khadka', abbreviation: 'BK', department: 'Computer Science', isHOD: false, targetWorkload: 34 },
+  { name: 'Ms. Devi Roka Karki', abbreviation: 'DRK', department: 'Computer Science', isHOD: false, targetWorkload: 27 },
+  { name: 'Mr. Raman Khadka', abbreviation: 'RK2', department: 'Computer Science', isHOD: false, targetWorkload: 31 },
+  { name: 'Mr. Santosh Nepal', abbreviation: 'SN', department: 'Computer Science', isHOD: false, targetWorkload: 27 },
   { name: 'Ms. Ponmani A', abbreviation: 'PA', department: 'Computer Science', isHOD: false, targetWorkload: 31 },
   // FRENCH
   { name: 'Ms. Jyoti Shakya', abbreviation: 'JS2', department: 'French', isHOD: false, targetWorkload: 15 },
   // ART
-  { name: 'Mr. Raja Man Karmacharya', abbreviation: 'RMK', department: 'Art', isHOD: true, targetWorkload: 28 },
-  { name: 'Mr. Manoj Shakya Panju', abbreviation: 'MSP', department: 'Art', isHOD: false, targetWorkload: 30 },
+  { name: 'Mr. Raja Man Karmacharya', abbreviation: 'RMK', department: 'Art', isHOD: true, targetWorkload: 22 },
+  { name: 'Mr. Manoj Shakya Panju', abbreviation: 'MSP', department: 'Art', isHOD: false, targetWorkload: 29 },
   // SPORTS
   { name: 'Mr. Dev Raj Anand', abbreviation: 'DRA', department: 'Sports', isHOD: true,  targetWorkload: 37 },
   { name: 'Mr. Naresh Rawal', abbreviation: 'NR',  department: 'Sports', isHOD: false, targetWorkload: 37 },
   { name: 'Mr. Bijaya Kumar Khatri', abbreviation: 'BKK', department: 'Sports', isHOD: false, targetWorkload: 37 },
   { name: 'Mr. Prashant Maharjan', abbreviation: 'PM2', department: 'Sports', isHOD: false, targetWorkload: 37 },
-  { name: 'Mr. Abishek Basnet', abbreviation: 'AB',  department: 'Sports', isHOD: false, targetWorkload: 37 },
+  { name: 'Mr. Abishek Basnet', abbreviation: 'AB',  department: 'Sports', isHOD: false, targetWorkload: 36 },
+  { name: 'Mr. Dipris Muni Bajrachara', abbreviation: 'DMB', department: 'Sports', isHOD: false, targetWorkload: 36 },
   { name: 'Ms. Shraddha Timalsena', abbreviation: 'ST', department: 'Yoga', isHOD: false, targetWorkload: 34 },
   // LIBRARY
   { name: 'Ms. Poonam Mishra', abbreviation: 'PM3', department: 'Library', isHOD: false, targetWorkload: 42 },
@@ -504,7 +506,7 @@ async function main() {
   await prisma.schoolConfig.create({
     data: {
       schoolName: 'Modern Indian School',
-      academicYear: '2025-26',
+      academicYear: '2026-27',
     },
   });
   console.log('Created school config');

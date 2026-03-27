@@ -153,7 +153,7 @@ export const subjectRooms = sqliteTable('SubjectRoom', {
 export const schoolConfig = sqliteTable('SchoolConfig', {
   id: text('id').primaryKey(),
   schoolName: text('schoolName').notNull().default('Modern Indian School'),
-  academicYear: text('academicYear').notNull().default('2025-26'),
+  academicYear: text('academicYear').notNull().default('2026-27'),
   seniorStartTime: text('seniorStartTime').notNull().default('7:35'),
   seniorEndTime: text('seniorEndTime').notNull().default('13:45'),
   juniorStartTime: text('juniorStartTime').notNull().default('9:15'),

@@ -49,7 +49,7 @@ export async function GET(
     timeSlots
   );
   const sn = schoolConfig?.schoolName?.trim() || 'Modern Indian School';
-  const yr = schoolConfig?.academicYear?.trim() || '2025-26';
+  const yr = schoolConfig?.academicYear?.trim() || '2026-27';
   grid.subtitle = `${sn}  |  Academic Year ${yr}`;
 
   // ── Generate file ───────────────────────────────────────────────────────────

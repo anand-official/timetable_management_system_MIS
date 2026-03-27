@@ -43,7 +43,7 @@ export async function GET(
   // ── Build grid ──────────────────────────────────────────────────────────────
   const grid = buildClassGrid(section.name, slots, days, timeSlots);
   const sn = schoolConfig?.schoolName?.trim() || 'Modern Indian School';
-  const yr = schoolConfig?.academicYear?.trim() || '2025-26';
+  const yr = schoolConfig?.academicYear?.trim() || '2026-27';
   grid.subtitle = `${sn}  |  Academic Year ${yr}`;
 
   // ── Generate file ───────────────────────────────────────────────────────────

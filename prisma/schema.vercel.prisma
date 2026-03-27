@@ -183,7 +183,7 @@ model SubjectRoom {
 model SchoolConfig {
   id                       String   @id @default(cuid())
   schoolName               String   @default("Modern Indian School")
-  academicYear             String   @default("2025-26")
+  academicYear             String   @default("2026-27")
   seniorStartTime          String   @default("7:35")
   seniorEndTime            String   @default("13:45")
   juniorStartTime          String   @default("9:15")

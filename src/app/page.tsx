@@ -1266,7 +1266,7 @@ export default function TimetableManagementSystem() {
           {/* Text — fades & slides on collapse */}
           <div className={`ml-3 min-w-0 flex-1 transition-all duration-300 ${sidebarCompact ? 'opacity-0 w-0 ml-0 overflow-hidden' : 'opacity-100'}`}>
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight whitespace-nowrap">Modern Indian School</div>
-            <div className="text-[10px] text-indigo-400 font-semibold tracking-wide whitespace-nowrap">Timetable · 2025–26</div>
+            <div className="text-[10px] text-indigo-400 font-semibold tracking-wide whitespace-nowrap">Timetable · 2026–27</div>
           </div>
           {/* Mobile close */}
           <button

@@ -72,7 +72,7 @@ export default async function AuthPage({
             Modern Indian School
           </h1>
           <p className="text-sm text-slate-500 mt-1 font-medium tracking-wide">
-            Timetable Management System · 2025–26
+            Timetable Management System · 2026–27
           </p>
         </div>
 

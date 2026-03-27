@@ -21,7 +21,7 @@ export const maxDuration = 60;
 
 function schoolSubtitle(schoolName: string | null, academicYear: string | null): string {
   const name = schoolName?.trim() || 'Modern Indian School';
-  const year = academicYear?.trim() || '2025-26';
+  const year = academicYear?.trim() || '2026-27';
   return `${name}  |  Academic Year ${year}`;
 }
 

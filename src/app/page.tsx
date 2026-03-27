@@ -838,7 +838,21 @@ export default function TimetableManagementSystem() {
   });
 
   // Get unique departments
-  const departments = [...new Set(teachers.map(t => t.department))].sort();
+  const departments = [...new Set(teachers.map(t => t.department).filter(Boolean))].sort();
+  const departmentCardPalette = [
+    { dot: 'bg-blue-500', card: 'bg-blue-50 border-blue-100 dark:bg-blue-500/12 dark:border-blue-500/25' },
+    { dot: 'bg-violet-500', card: 'bg-violet-50 border-violet-100 dark:bg-violet-500/12 dark:border-violet-500/25' },
+    { dot: 'bg-emerald-500', card: 'bg-emerald-50 border-emerald-100 dark:bg-emerald-500/12 dark:border-emerald-500/25' },
+    { dot: 'bg-green-500', card: 'bg-green-50 border-green-100 dark:bg-green-500/12 dark:border-green-500/25' },
+    { dot: 'bg-indigo-500', card: 'bg-indigo-50 border-indigo-100 dark:bg-indigo-500/12 dark:border-indigo-500/25' },
+    { dot: 'bg-orange-500', card: 'bg-orange-50 border-orange-100 dark:bg-orange-500/12 dark:border-orange-500/25' },
+    { dot: 'bg-amber-500', card: 'bg-amber-50 border-amber-100 dark:bg-amber-500/12 dark:border-amber-500/25' },
+    { dot: 'bg-teal-500', card: 'bg-teal-50 border-teal-100 dark:bg-teal-500/12 dark:border-teal-500/25' },
+    { dot: 'bg-cyan-500', card: 'bg-cyan-50 border-cyan-100 dark:bg-cyan-500/12 dark:border-cyan-500/25' },
+    { dot: 'bg-rose-500', card: 'bg-rose-50 border-rose-100 dark:bg-rose-500/12 dark:border-rose-500/25' },
+    { dot: 'bg-fuchsia-500', card: 'bg-fuchsia-50 border-fuchsia-100 dark:bg-fuchsia-500/12 dark:border-fuchsia-500/25' },
+    { dot: 'bg-lime-500', card: 'bg-lime-50 border-lime-100 dark:bg-lime-500/12 dark:border-lime-500/25' },
+  ];
   const teacherDepartmentOptions = [...new Set([...DEFAULT_TEACHER_DEPARTMENTS, ...departments])].sort((a, b) =>
     a.localeCompare(b)
   );
@@ -1754,37 +1768,27 @@ export default function TimetableManagementSystem() {
               </div>
               <div className="p-6">
                 <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                  {[
-                    { name: 'English', color: 'bg-blue-500', light: 'bg-blue-50 dark:bg-blue-500/12 dark:border-blue-500/20' },
-                    { name: 'Physics', color: 'bg-violet-500', light: 'bg-violet-50 dark:bg-violet-500/12 dark:border-violet-500/20' },
-                    { name: 'Chemistry', color: 'bg-emerald-500', light: 'bg-emerald-50 dark:bg-emerald-500/12 dark:border-emerald-500/20' },
-                    { name: 'Biology', color: 'bg-green-500', light: 'bg-green-50 dark:bg-green-500/12 dark:border-green-500/20' },
-                    { name: 'Mathematics', color: 'bg-indigo-500', light: 'bg-indigo-50 dark:bg-indigo-500/12 dark:border-indigo-500/20' },
-                    { name: 'Hindi', color: 'bg-orange-500', light: 'bg-orange-50 dark:bg-orange-500/12 dark:border-orange-500/20' },
-                    { name: 'Nepali', color: 'bg-amber-500', light: 'bg-amber-50 dark:bg-amber-500/12 dark:border-amber-500/20' },
-                    { name: 'Commerce', color: 'bg-teal-500', light: 'bg-teal-50 dark:bg-teal-500/12 dark:border-teal-500/20' },
-                    { name: 'Economics', color: 'bg-cyan-500', light: 'bg-cyan-50 dark:bg-cyan-500/12 dark:border-cyan-500/20' },
-                    { name: 'Social Studies', color: 'bg-rose-500', light: 'bg-rose-50 dark:bg-rose-500/12 dark:border-rose-500/20' },
-                    { name: 'Computer Science', color: 'bg-fuchsia-500', light: 'bg-fuchsia-50 dark:bg-fuchsia-500/12 dark:border-fuchsia-500/20' },
-                    { name: 'Sports', color: 'bg-lime-500', light: 'bg-lime-50 dark:bg-lime-500/12 dark:border-lime-500/20' },
-                  ].map(({ name, color, light }) => {
+                  {departments.map((name, index) => {
                     const deptTeachers = teachers.filter(t => t.department === name);
-                    if (deptTeachers.length === 0) return null;
+                    const palette = departmentCardPalette[index % departmentCardPalette.length];
                     return (
-                      <div key={name} className={`${light} rounded-xl p-3.5 border border-white/80 dark:border-slate-800 hover:shadow-md dark:hover:shadow-black/20 transition-shadow duration-200`}>
+                      <div
+                        key={name}
+                        className={`${palette.card} rounded-xl p-3.5 border shadow-sm shadow-slate-200/50 dark:shadow-black/20 hover:shadow-md transition-shadow duration-200`}
+                      >
                         <div className="flex items-center gap-2 mb-2">
-                          <div className={`h-2 w-2 rounded-full ${color}`} />
+                          <div className={`h-2 w-2 rounded-full ${palette.dot}`} />
                           <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">{name}</h3>
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">{deptTeachers.length} teacher{deptTeachers.length !== 1 ? 's' : ''}</p>
                         <div className="flex flex-wrap gap-1">
                           {deptTeachers.slice(0, 3).map(t => (
-                            <span key={t.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white/85 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 border border-white dark:border-slate-700 shadow-sm">
+                            <span key={t.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white dark:bg-slate-950/70 text-slate-700 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
                               {t.abbreviation}
                             </span>
                           ))}
                           {deptTeachers.length > 3 && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white/60 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 border border-white dark:border-slate-700">
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white/80 dark:bg-slate-900/80 text-slate-500 dark:text-slate-300 border border-slate-200/70 dark:border-slate-700/80">
                               +{deptTeachers.length - 3}
                             </span>
                           )}

@@ -7,6 +7,7 @@ import { sortSectionsByGradeThenName } from '@/lib/section-sort';
 import { generateBulkTimetablePdf } from '@/lib/export/timetable-pdf';
 import { generateBulkTimetableXlsx } from '@/lib/export/timetable-xlsx';
 import type { TimetableGrid } from '@/lib/export/timetable-grid';
+import { getSectionDisplayTimeSlot } from '@/lib/section-time-slots';
 import {
   getAllSlotTeacherIds,
   getCombinedSlotDisplay,
@@ -97,35 +98,39 @@ export async function GET(request: NextRequest) {
         end: t.endTime,
         duration: t.duration,
       })),
-      timetable: allSlots.map(slot => ({
-        section: slot.section?.name ?? '',
-        day: slot.day.name,
-        period: slot.timeSlot.periodNumber,
-        startTime: slot.timeSlot.startTime,
-        endTime: slot.timeSlot.endTime,
-        subject: getCombinedSlotDisplay(slot.notes)?.name ?? slot.subject?.name ?? '',
-        subjectCode: getCombinedSlotDisplay(slot.notes)?.code ?? slot.subject?.code ?? '',
-        teacher: getTeacherExportLabel(slot).names,
-        teacherAbbr: getTeacherExportLabel(slot).abbreviations,
-        labTeacher: slot.labTeacher?.name ?? '',
-        labTeacherAbbr: slot.labTeacher?.abbreviation ?? '',
-        isLab: slot.isLab,
-        isGames: slot.isGames,
-        isYoga: slot.isYoga,
-        isLibrary: slot.isLibrary,
-      })),
+      timetable: allSlots.map(slot => {
+        const displayTimeSlot = getSectionDisplayTimeSlot(slot.section?.name ?? null, slot.timeSlot);
+        return {
+          section: slot.section?.name ?? '',
+          day: slot.day.name,
+          period: slot.timeSlot.periodNumber,
+          startTime: displayTimeSlot.startTime,
+          endTime: displayTimeSlot.endTime,
+          subject: getCombinedSlotDisplay(slot.notes)?.name ?? slot.subject?.name ?? '',
+          subjectCode: getCombinedSlotDisplay(slot.notes)?.code ?? slot.subject?.code ?? '',
+          teacher: getTeacherExportLabel(slot).names,
+          teacherAbbr: getTeacherExportLabel(slot).abbreviations,
+          labTeacher: slot.labTeacher?.name ?? '',
+          labTeacherAbbr: slot.labTeacher?.abbreviation ?? '',
+          isLab: slot.isLab,
+          isGames: slot.isGames,
+          isYoga: slot.isYoga,
+          isLibrary: slot.isLibrary,
+        };
+      }),
     };
 
     if (format === 'csv') {
       let csv = 'Section,Day,Period,Start Time,End Time,Subject,Teacher,Lab Teacher\n';
       for (const slot of allSlots) {
         const teacherLabel = getTeacherExportLabel(slot);
+        const displayTimeSlot = getSectionDisplayTimeSlot(slot.section?.name ?? null, slot.timeSlot);
         const row = [
           slot.section?.name ?? '',
           slot.day.name,
           String(slot.timeSlot.periodNumber),
-          slot.timeSlot.startTime,
-          slot.timeSlot.endTime,
+          displayTimeSlot.startTime,
+          displayTimeSlot.endTime,
           getCombinedSlotDisplay(slot.notes)?.name ?? slot.subject?.name ?? '',
           teacherLabel.names,
           slot.labTeacher?.name ?? '',

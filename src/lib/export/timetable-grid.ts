@@ -7,6 +7,7 @@ import {
   getCombinedSlotDisplay,
   getSlotTeacherAbbreviations,
 } from '@/lib/combined-slot';
+import { getSectionDisplayTimeSlots } from '@/lib/section-time-slots';
 
 export interface DayInfo {
   id: string;
@@ -122,7 +123,10 @@ export function buildClassGrid(
   periods: PeriodInfo[],
 ): TimetableGrid {
   const sortedDays = [...days].sort((a, b) => a.dayOrder - b.dayOrder);
-  const sortedPeriods = [...periods].sort((a, b) => a.periodNumber - b.periodNumber);
+  const sortedPeriods = getSectionDisplayTimeSlots(
+    sectionName,
+    [...periods].sort((a, b) => a.periodNumber - b.periodNumber)
+  );
 
   const slotMap = new Map<string, RawSlot>();
   for (const s of slots) {

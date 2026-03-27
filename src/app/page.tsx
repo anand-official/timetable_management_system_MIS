@@ -46,6 +46,7 @@ import {
   getSlotTeacherAbbreviations as getCombinedSlotTeacherAbbreviations,
   getSlotTeacherNames as getCombinedSlotTeacherNames,
 } from '@/lib/combined-slot';
+import { getSectionDisplayTimeSlots } from '@/lib/section-time-slots';
 
 // Types
 interface Teacher {
@@ -1173,6 +1174,8 @@ export default function TimetableManagementSystem() {
     : 0;
 
   const fillerSlotsCount = slots.filter((s: any) => s.isFiller).length;
+  const selectedSectionInfo = sections.find((section) => section.id === selectedSection);
+  const displayedClassTimeSlots = getSectionDisplayTimeSlots(selectedSectionInfo?.name, timeSlots);
 
   useEffect(() => {
     if (!selectedTeacher && teachers.length > 0) return;
@@ -1888,7 +1891,7 @@ export default function TimetableManagementSystem() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {timeSlots.map(slot => {
+                      {displayedClassTimeSlots.map(slot => {
                         const sectionSlots = getSectionTimetable(selectedSection);
                         return (
                           <TableRow key={slot.id} className="border-b border-slate-50 hover:bg-slate-50/40 transition-colors">

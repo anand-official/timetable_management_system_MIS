@@ -79,9 +79,11 @@ model TeacherSubject {
   updatedAt       DateTime @updatedAt
   section         Section  @relation(fields: [sectionId], references: [id])
   subject         Subject  @relation(fields: [subjectId], references: [id])
-  teacher         Teacher  @relation(fields: [teacherId], references: [id])
+  teacher         Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
 
   @@unique([teacherId, subjectId, sectionId])
+  @@index([teacherId])
+  @@index([sectionId])
 }
 
 model TimeSlot {
@@ -144,8 +146,8 @@ model TimetableSlot {
   notes          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  teacher        Teacher? @relation("PrimaryTeacherSlots", fields: [teacherId], references: [id])
-  labTeacher     Teacher? @relation("LabTeacherSlots", fields: [labTeacherId], references: [id])
+  teacher        Teacher? @relation("PrimaryTeacherSlots", fields: [teacherId], references: [id], onDelete: SetNull)
+  labTeacher     Teacher? @relation("LabTeacherSlots", fields: [labTeacherId], references: [id], onDelete: SetNull)
   room           Room?    @relation(fields: [roomId], references: [id])
   subject        Subject? @relation(fields: [subjectId], references: [id])
   timeSlot       TimeSlot @relation(fields: [timeSlotId], references: [id])
@@ -153,6 +155,9 @@ model TimetableSlot {
   section        Section  @relation(fields: [sectionId], references: [id])
 
   @@unique([sectionId, dayId, timeSlotId])
+  @@index([teacherId])
+  @@index([labTeacherId])
+  @@index([dayId, timeSlotId])
 }
 
 model Room {

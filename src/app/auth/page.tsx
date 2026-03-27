@@ -95,7 +95,7 @@ export default async function AuthPage({
             <form method="POST" action="/api/auth" className="space-y-5">
               <input type="hidden" name="next" value={nextPath} />
 
-              {errorCode === 'invalid-code' && (
+              {(errorCode === 'invalid-code' || errorCode === 'too-many-attempts') && (
                 <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 animate-fade-in">
                   <div className="h-4 w-4 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5">
                     <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -103,7 +103,9 @@ export default async function AuthPage({
                     </svg>
                   </div>
                   <p className="text-sm text-red-700 font-medium">
-                    Incorrect access code. Please try again.
+                    {errorCode === 'too-many-attempts'
+                      ? 'Too many failed attempts. Please wait 15 minutes before trying again.'
+                      : 'Incorrect access code. Please try again.'}
                   </p>
                 </div>
               )}

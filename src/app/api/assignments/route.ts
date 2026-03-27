@@ -11,10 +11,10 @@ import {
 // Returns all TeacherSubject assignments grouped by section, with teacher + subject info
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const gradeFilter = searchParams.get('grade');
+  const gradeFilter = searchParams.get('grade')?.trim().toUpperCase() || null;
 
   const where = gradeFilter
-    ? { section: { grade: { name: gradeFilter } } }
+    ? { section: { grade: { name: { equals: gradeFilter } } } }
     : {};
 
   const [assignments, sections, subjects, teachers] = await Promise.all([
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       orderBy: [{ section: { name: 'asc' } }, { subject: { name: 'asc' } }],
     }),
     db.section.findMany({
-      where: gradeFilter ? { grade: { name: gradeFilter } } : {},
+      where: gradeFilter ? { grade: { name: { equals: gradeFilter } } } : {},
       include: { grade: true },
     }),
     db.subject.findMany({ orderBy: { name: 'asc' } }),
@@ -245,9 +245,18 @@ export async function POST(request: NextRequest) {
 
 // DELETE /api/assignments?id=xxx
 export async function DELETE(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get('id');
-  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
-  await db.teacherSubject.delete({ where: { id } });
-  return NextResponse.json({ success: true });
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    if (!id || typeof id !== 'string' || id.length > 128) {
+      return NextResponse.json({ error: 'Valid assignment ID required' }, { status: 400 });
+    }
+    await db.teacherSubject.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    if (err?.code === 'P2025') {
+      return NextResponse.json({ error: 'Assignment not found' }, { status: 404 });
+    }
+    return NextResponse.json({ error: 'Failed to delete assignment' }, { status: 500 });
+  }
 }

@@ -1,8 +1,19 @@
 import { db } from '@/lib/db';
 import { getAllSlotTeacherIds, slotHasTeacherId } from '@/lib/combined-slot';
 
+/**
+ * Returns a local-midnight Date for the given input.
+ * ISO strings like "2025-03-26" are parsed as local date parts (not UTC)
+ * to avoid off-by-one errors when the server runs in UTC or UTC+offset.
+ */
 export function normalizeDateOnly(input: string | Date): Date {
-  const d = input instanceof Date ? new Date(input) : new Date(input);
+  if (typeof input === 'string') {
+    // Strip time component and parse as local YYYY-MM-DD
+    const datePart = input.split('T')[0];
+    const [y, m, d] = datePart.split('-').map(Number);
+    if (y && m && d) return new Date(y, m - 1, d);
+  }
+  const d = input instanceof Date ? input : new Date(input);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 

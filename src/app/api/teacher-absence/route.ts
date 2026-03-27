@@ -32,6 +32,12 @@ export async function POST(request: NextRequest) {
     if (!body?.teacherId || !body?.date) {
       return NextResponse.json({ success: false, error: 'teacherId and date are required' }, { status: 400 });
     }
+    if (typeof body.teacherId !== 'string' || body.teacherId.length > 128) {
+      return NextResponse.json({ success: false, error: 'Invalid teacherId' }, { status: 400 });
+    }
+    if (typeof body.date !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(body.date)) {
+      return NextResponse.json({ success: false, error: 'date must be YYYY-MM-DD' }, { status: 400 });
+    }
     const date = normalizeDateOnly(body.date);
     const absence = await db.teacherAbsence.upsert({
       where: { teacherId_date: { teacherId: body.teacherId, date } },
@@ -50,8 +56,8 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
+    if (!id || id.length > 128) {
+      return NextResponse.json({ success: false, error: 'Valid id is required' }, { status: 400 });
     }
     await db.teacherAbsence.delete({ where: { id } });
     return NextResponse.json({ success: true });

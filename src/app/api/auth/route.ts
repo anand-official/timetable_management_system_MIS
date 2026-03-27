@@ -6,6 +6,54 @@ import {
   isSafeNextPath,
 } from '@/lib/auth-session';
 
+// ── In-memory rate limiter (brute-force protection) ───────────────────────────
+// Allows MAX_ATTEMPTS failed attempts per IP within WINDOW_MS before locking out.
+const RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_ATTEMPTS = 10;
+
+interface RateEntry { count: number; windowStart: number }
+const rateLimitMap = new Map<string, RateEntry>();
+
+function getClientIp(request: NextRequest): string {
+  return (
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') ||
+    'unknown'
+  );
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 0, windowStart: now });
+    return false;
+  }
+  return entry.count >= MAX_ATTEMPTS;
+}
+
+function recordFailedAttempt(ip: string): void {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now });
+  } else {
+    entry.count += 1;
+  }
+}
+
+function clearAttempts(ip: string): void {
+  rateLimitMap.delete(ip);
+}
+
+// Periodically clean up stale entries to prevent memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap.entries()) {
+    if (now - entry.windowStart > RATE_WINDOW_MS) rateLimitMap.delete(ip);
+  }
+}, RATE_WINDOW_MS);
+
 function getSecretCode() {
   return process.env.ACCESS_CODE || process.env.MIS_ACCESS_CODE;
 }
@@ -43,6 +91,13 @@ function resolveNextPath(request: NextRequest, rawPath: string | null) {
 }
 
 export async function POST(request: NextRequest) {
+  const ip = getClientIp(request);
+
+  // Rate limit check — return 429 before even reading the body
+  if (isRateLimited(ip)) {
+    return NextResponse.redirect(buildAuthUrl(request, '/', 'too-many-attempts'), { status: 303 });
+  }
+
   const formData = await request.formData();
   const submittedCode = String(formData.get('code') || '').trim();
   const nextPath = resolveNextPath(request, String(formData.get('next') || ''));
@@ -56,8 +111,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (submittedCode !== secretCode) {
+    recordFailedAttempt(ip);
     return NextResponse.redirect(buildAuthUrl(request, nextPath, 'invalid-code'), { status: 303 });
   }
+
+  // Successful auth — clear failure count
+  clearAttempts(ip);
 
   const sessionValue = await createAuthSessionValue();
   if (!sessionValue) {
@@ -73,7 +132,7 @@ export async function POST(request: NextRequest) {
     value: sessionValue,
     path: '/',
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: 'strict',
     secure: process.env.NODE_ENV === 'production',
     maxAge: AUTH_COOKIE_MAX_AGE_SECONDS,
   });

@@ -78,7 +78,8 @@ export async function GET(request: NextRequest) {
       a.day.dayOrder - b.day.dayOrder ||
       a.timeSlot.periodNumber - b.timeSlot.periodNumber
     );
-    const teacherWorkloadMap = buildTeacherWorkloadMap(allSlots);
+    const sportsTeacherIds = teachers.filter(t => t.department.toLowerCase() === 'sports').map(t => t.id);
+    const teacherWorkloadMap = buildTeacherWorkloadMap(allSlots, sportsTeacherIds);
 
     const subtitle = schoolSubtitle(schoolConfig?.schoolName ?? null, schoolConfig?.academicYear ?? null);
 
@@ -322,17 +323,18 @@ export async function GET(request: NextRequest) {
 }
 
 function buildTeacherWorkloadMap(
-  slots: Array<{ teacherId: string | null; labTeacherId: string | null; notes?: string | null; dayId: string; timeSlotId: string }>
+  slots: Array<{ teacherId: string | null; labTeacherId: string | null; notes?: string | null; dayId: string; timeSlotId: string; isGames?: boolean | null }>,
+  sportsTeacherIds: string[] = []
 ) {
   const teacherSlotKeys = new Map<string, Set<string>>();
 
   for (const slot of slots) {
     const key = `${slot.dayId}|${slot.timeSlotId}`;
-    for (const teacherId of getAllSlotTeacherIds(slot)) {
-      if (!teacherId) continue;
-      if (!teacherSlotKeys.has(teacherId)) {
-        teacherSlotKeys.set(teacherId, new Set());
-      }
+    const ids = slot.isGames && sportsTeacherIds.length > 0
+      ? sportsTeacherIds
+      : getAllSlotTeacherIds(slot).filter((id): id is string => !!id);
+    for (const teacherId of ids) {
+      if (!teacherSlotKeys.has(teacherId)) teacherSlotKeys.set(teacherId, new Set());
       teacherSlotKeys.get(teacherId)!.add(key);
     }
   }

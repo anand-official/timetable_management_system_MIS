@@ -38,11 +38,17 @@ export async function GET(request: NextRequest) {
     }
 
     if (type === 'teacher' && id) {
-      const slots = await db.timetableSlot.findMany({
-        include: { day: true, timeSlot: true, subject: true, teacher: true, labTeacher: true, section: true, room: true },
-        orderBy: [{ day: { dayOrder: 'asc' } }, { timeSlot: { periodNumber: 'asc' } }],
+      const [slots, teacher] = await Promise.all([
+        db.timetableSlot.findMany({
+          include: { day: true, timeSlot: true, subject: true, teacher: true, labTeacher: true, section: true, room: true },
+          orderBy: [{ day: { dayOrder: 'asc' } }, { timeSlot: { periodNumber: 'asc' } }],
+        }),
+        db.teacher.findUnique({ where: { id }, select: { department: true } }),
+      ]);
+      const isSports = teacher?.department?.toLowerCase() === 'sports';
+      return NextResponse.json({
+        slots: slots.filter((slot) => slotHasTeacherId(slot, id) || (isSports && slot.isGames)),
       });
-      return NextResponse.json({ slots: slots.filter((slot) => slotHasTeacherId(slot, id)) });
     }
 
     // Default: return everything needed for the timetable page
@@ -60,7 +66,8 @@ export async function GET(request: NextRequest) {
     ]);
 
     const sections = sortSectionsByGradeThenName(sectionsRaw);
-    const teacherWorkloadMap = buildTeacherWorkloadMap(slots);
+    const sportsTeacherIds = teachers.filter(t => t.department.toLowerCase() === 'sports').map(t => t.id);
+    const teacherWorkloadMap = buildTeacherWorkloadMap(slots, sportsTeacherIds);
 
     return NextResponse.json({
       sections,
@@ -349,17 +356,18 @@ function parseGrades(raw: string | null | undefined): string[] {
 }
 
 function buildTeacherWorkloadMap(
-  slots: Array<{ teacherId: string | null; labTeacherId: string | null; notes?: string | null; dayId: string; timeSlotId: string }>
+  slots: Array<{ teacherId: string | null; labTeacherId: string | null; notes?: string | null; dayId: string; timeSlotId: string; isGames?: boolean | null }>,
+  sportsTeacherIds: string[] = []
 ) {
   const teacherSlotKeys = new Map<string, Set<string>>();
 
   for (const slot of slots) {
     const key = `${slot.dayId}|${slot.timeSlotId}`;
-    for (const teacherId of getAllSlotTeacherIds(slot)) {
-      if (!teacherId) continue;
-      if (!teacherSlotKeys.has(teacherId)) {
-        teacherSlotKeys.set(teacherId, new Set());
-      }
+    const ids = slot.isGames && sportsTeacherIds.length > 0
+      ? sportsTeacherIds
+      : getAllSlotTeacherIds(slot).filter((id): id is string => !!id);
+    for (const teacherId of ids) {
+      if (!teacherSlotKeys.has(teacherId)) teacherSlotKeys.set(teacherId, new Set());
       teacherSlotKeys.get(teacherId)!.add(key);
     }
   }

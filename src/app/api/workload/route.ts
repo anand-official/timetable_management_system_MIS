@@ -27,17 +27,18 @@ function mergeTeacherSlots<T extends { id: string }>(...groups: T[][]) {
 }
 
 function buildTeacherWorkloadMap(
-  slots: Array<{ teacherId?: string | null; labTeacherId?: string | null; notes?: string | null; dayId: string; timeSlotId: string }>
+  slots: Array<{ teacherId?: string | null; labTeacherId?: string | null; notes?: string | null; dayId: string; timeSlotId: string; isGames?: boolean | null }>,
+  sportsTeacherIds: string[] = []
 ) {
   const teacherSlotKeys = new Map<string, Set<string>>();
 
   for (const slot of slots) {
     const key = `${slot.dayId}|${slot.timeSlotId}`;
-    for (const teacherId of getAllSlotTeacherIds(slot)) {
-      if (!teacherId) continue;
-      if (!teacherSlotKeys.has(teacherId)) {
-        teacherSlotKeys.set(teacherId, new Set());
-      }
+    const ids = slot.isGames && sportsTeacherIds.length > 0
+      ? sportsTeacherIds
+      : getAllSlotTeacherIds(slot).filter((id): id is string => !!id);
+    for (const teacherId of ids) {
+      if (!teacherSlotKeys.has(teacherId)) teacherSlotKeys.set(teacherId, new Set());
       teacherSlotKeys.get(teacherId)!.add(key);
     }
   }
@@ -77,7 +78,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
       }
 
-      const mergedSlots = allSlots.filter((slot) => slotHasTeacherId(slot, teacherId));
+      const isSports = teacher.department.toLowerCase() === 'sports';
+      const mergedSlots = allSlots.filter((slot) => slotHasTeacherId(slot, teacherId) || (isSports && slot.isGames));
       const current = buildTeacherWorkloadMap(
         mergedSlots.map((slot) => ({
           teacherId: slot.teacherId,
@@ -85,7 +87,9 @@ export async function GET(request: NextRequest) {
           notes: slot.notes ?? null,
           dayId: slot.dayId,
           timeSlotId: slot.timeSlotId,
-        }))
+          isGames: slot.isGames,
+        })),
+        isSports ? [teacherId] : []
       ).get(teacherId) ?? 0;
       const target = Math.max(teacher.targetWorkload, 1);
 
@@ -123,11 +127,12 @@ export async function GET(request: NextRequest) {
         orderBy: { department: 'asc' },
       }),
       db.timetableSlot.findMany({
-        select: { id: true, teacherId: true, labTeacherId: true, notes: true, dayId: true, timeSlotId: true },
+        select: { id: true, teacherId: true, labTeacherId: true, notes: true, dayId: true, timeSlotId: true, isGames: true },
       }),
     ]);
 
-    const workloadMap = buildTeacherWorkloadMap(allSlots);
+    const sportsTeacherIds = teachers.filter(t => t.department.toLowerCase() === 'sports').map(t => t.id);
+    const workloadMap = buildTeacherWorkloadMap(allSlots, sportsTeacherIds);
 
     const workloadData = teachers.map(t => {
       const current = workloadMap.get(t.id) ?? 0;
@@ -171,11 +176,12 @@ export async function POST() {
         include: { teacherSubjects: true },
       }),
       db.timetableSlot.findMany({
-        select: { teacherId: true, labTeacherId: true, notes: true, dayId: true, timeSlotId: true },
+        select: { teacherId: true, labTeacherId: true, notes: true, dayId: true, timeSlotId: true, isGames: true },
       }),
     ]);
 
-    const workloadMap = buildTeacherWorkloadMap(allSlots);
+    const sportsTeacherIds = teachers.filter(t => t.department.toLowerCase() === 'sports').map(t => t.id);
+    const workloadMap = buildTeacherWorkloadMap(allSlots, sportsTeacherIds);
 
     await db.workloadValidation.deleteMany();
 

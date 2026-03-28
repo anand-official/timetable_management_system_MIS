@@ -120,7 +120,7 @@ const teacherAssignments = [
   { teacher: 'Ms. Ritu Sharma', subject: 'Hindi',
     sectionPeriods: { VIIIA: 2, VIIIB: 2, VIIIC: 2, VIIID: 2, VIIIE: 2, VIIIF: 2, VIIID: 4, VIID: 4, VID: 4 } },
   { teacher: 'Ms. Ganga MB Chhetri', subject: 'Hindi',
-    sectionPeriods: { VIIID: 2, VIIIE: 2, VIIIF: 2, VIID: 2, VIIE: 2, VIIF: 2, VIIIE: 4, VIIE: 4, VIE: 4 } },
+    sectionPeriods: { VIIID: 2, VIIIE: 2, VIIIF: 2, VIID: 2, VIIE: 2, VIIIE: 4, VIIE: 4, VIE: 4 } },
   { teacher: 'Ms. Pooja Rawal', subject: 'Hindi',
     sectionPeriods: { IXA: 2, IXB: 2, IXC: 2, VIA: 2, VIB: 2, VIC: 2, VIIIC: 4, VIIC: 4, VIC: 4 } },
 
@@ -228,7 +228,7 @@ const teacherAssignments = [
 
   // ===== GAMES / SPORTS =====
   { teacher: 'Mr. Dev Raj Anand', subject: 'Games',
-    sectionPeriods: { VIIA: 3, VIIB: 3, VIIC: 3, VIID: 3, VIIE: 3, VIIF: 3 } },
+    sectionPeriods: { VIIA: 3, VIIB: 3, VIIC: 3, VIID: 3, VIIE: 3 } },
   { teacher: 'Mr. Bijaya Kumar Khatri', subject: 'Games',
     sectionPeriods: { VIIIA: 3, VIIIB: 3, VIIIC: 3, VIIID: 3, VIIIE: 3, VIIIF: 3 } },
   { teacher: 'Mr. Naresh Rawal', subject: 'Games',
@@ -248,12 +248,12 @@ const teacherAssignments = [
     sectionPeriods: { XA: 1, XB: 1, XC: 1, XD: 1, XE: 1, XF: 1,
                       IXA: 1, IXB: 1, IXC: 1, IXD: 1, IXE: 1, IXF: 1,
                       VIIIA: 1, VIIIB: 1, VIIIC: 1, VIIID: 1, VIIIE: 1, VIIIF: 1,
-                      VIIA: 1, VIIB: 1, VIIC: 1, VIID: 1, VIIE: 1, VIIF: 1,
+                      VIIA: 1, VIIB: 1, VIIC: 1, VIID: 1, VIIE: 1,
                       VIA: 1, VIB: 1, VIC: 1, VID: 1, VIE: 1 } },
 
   // ===== ART =====
   { teacher: 'Mr. Raja Man Karmacharya', subject: 'Art',
-    sectionPeriods: { VIIA: 1, VIIB: 1, VIIC: 1, VIID: 1, VIIE: 1, VIIF: 1,
+    sectionPeriods: { VIIA: 1, VIIB: 1, VIIC: 1, VIID: 1, VIIE: 1,
                       VIIIA: 1, VIIIB: 1, VIIIC: 1, VIIID: 1, VIIIE: 1, VIIIF: 1,
                       IXA: 1, IXB: 1, IXC: 1, IXD: 1, IXE: 1, IXF: 1,
                       XA: 1, XB: 1, XC: 1, XD: 1, XE: 1, XF: 1 } },
@@ -264,7 +264,7 @@ const teacherAssignments = [
   // ===== MUSIC =====
   { teacher: 'Ms. Sangeeta Pradhan Rana', subject: 'Music',
     sectionPeriods: { VIA: 2, VIB: 2, VIC: 2, VID: 2, VIE: 2,
-                      VIIA: 2, VIIB: 2, VIIC: 2, VIID: 2, VIIE: 2, VIIF: 2,
+                      VIIA: 2, VIIB: 2, VIIC: 2, VIID: 2, VIIE: 2,
                       VIIIA: 2, VIIIB: 2, VIIIC: 2, VIIID: 2, VIIIE: 2, VIIIF: 2,
                       IXA: 1, IXB: 1, IXC: 1, IXD: 1, IXE: 1, IXF: 1 } },
 

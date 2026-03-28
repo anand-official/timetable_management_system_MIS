@@ -19,7 +19,7 @@ const sectionsPerGrade: Record<string, { name: string; stream?: string }[]> = {
     { name: 'VIA' }, { name: 'VIB' }, { name: 'VIC' }, { name: 'VID' }, { name: 'VIE' },
   ],
   'VII': [
-    { name: 'VIIA' }, { name: 'VIIB' }, { name: 'VIIC' }, { name: 'VIID' }, { name: 'VIIE' }, { name: 'VIIF' },
+    { name: 'VIIA' }, { name: 'VIIB' }, { name: 'VIIC' }, { name: 'VIID' }, { name: 'VIIE' },
   ],
   'VIII': [
     { name: 'VIIIA' }, { name: 'VIIIB' }, { name: 'VIIIC' }, { name: 'VIIID' }, { name: 'VIIIE' }, { name: 'VIIIF' },
@@ -327,7 +327,7 @@ const teachers = [
 // Class Teachers mapping from the PDF
 const classTeachers: Record<string, string> = {
   'VIA': 'MR', 'VIB': 'RA', 'VIC': 'PA', 'VID': 'DD', 'VIE': 'KS',
-  'VIIA': 'SR', 'VIIB': 'MA', 'VIIC': 'RK', 'VIID': 'SJ', 'VIIE': 'JS1', 'VIIF': 'RR',
+  'VIIA': 'SR', 'VIIB': 'MA', 'VIIC': 'RK', 'VIID': 'SJ', 'VIIE': 'JS1',
   'VIIIA': 'AS1', 'VIIIB': 'BSD', 'VIIIC': 'MKG', 'VIIID': 'ARS', 'VIIIE': 'SN', 'VIIIF': 'KT',
   'IXA': 'RS1', 'IXB': 'RT', 'IXC': 'RM', 'IXD': 'SB', 'IXE': 'KKK', 'IXF': 'RK2',
   'XA': 'GK', 'XB': 'EA', 'XC': 'KC', 'XD': 'DT', 'XE': 'DKM',
@@ -338,7 +338,7 @@ const classTeachers: Record<string, string> = {
 // Coordinators mapping
 const coordinators: Record<string, string> = {
   'VIA': 'MR', 'VIB': 'MR', 'VIC': 'MR', 'VID': 'MR', 'VIE': 'MR',
-  'VIIA': 'JS1', 'VIIB': 'JS1', 'VIIC': 'JS1', 'VIID': 'JS1', 'VIIE': 'JS1', 'VIIF': 'JS1',
+  'VIIA': 'JS1', 'VIIB': 'JS1', 'VIIC': 'JS1', 'VIID': 'JS1', 'VIIE': 'JS1',
   'VIIIA': 'SN', 'VIIIB': 'SN', 'VIIIC': 'SN', 'VIIID': 'SN', 'VIIIE': 'SN', 'VIIIF': 'SN',
   'IXA': 'SB', 'IXB': 'SB', 'IXC': 'SB', 'IXD': 'SB', 'IXE': 'SB', 'IXF': 'SB',
   'XA': 'DKM', 'XB': 'DKM', 'XC': 'KC', 'XD': 'DKM', 'XE': 'DKM',
@@ -582,7 +582,7 @@ async function main() {
     { teacher: 'EA', subject: 'Biology', sections: ['XB'], periodsPerWeek: 4 },
     { teacher: 'NSS', subject: 'Biology', sections: ['XC', 'IXB', 'IXC', 'VIIID', 'VIIIE'], periodsPerWeek: 4 },
     { teacher: 'PKS', subject: 'Biology', sections: ['XE', 'IXD', 'IXE', 'IXF', 'VIIIA', 'VIIIF'], periodsPerWeek: 4 },
-    { teacher: 'RR', subject: 'Science', sections: ['VIIE', 'VIIF', 'VIA', 'IXA', 'IXB'], periodsPerWeek: 4 },
+    { teacher: 'RR', subject: 'Science', sections: ['VIIE', 'VIA', 'IXA', 'IXB'], periodsPerWeek: 4 },
     { teacher: 'DD', subject: 'Science', sections: ['XD', 'VIIIF', 'VID'], periodsPerWeek: 5 },
     { teacher: 'PSK', subject: 'Science', sections: ['VIC'], periodsPerWeek: 5 },
     
@@ -600,15 +600,15 @@ async function main() {
     { teacher: 'SR', subject: 'Mathematics', sections: ['VIIC', 'VIID', 'VIC'], periodsPerWeek: 5 },
     { teacher: 'JS1', subject: 'Mathematics', sections: ['IXF', 'VIIIF', 'VIIE'], periodsPerWeek: 5 },
     { teacher: 'MR', subject: 'Mathematics', sections: ['VIA'], periodsPerWeek: 5 },
-    { teacher: 'KS', subject: 'Mathematics', sections: ['VIE', 'VIIF'], periodsPerWeek: 5 },
+    { teacher: 'KS', subject: 'Mathematics', sections: ['VIE'], periodsPerWeek: 5 },
     // MA does NOT take VIA (MR's sole section) or VIIB (SS's section)
     { teacher: 'MA', subject: 'Mathematics', sections: ['VIB', 'VID'], periodsPerWeek: 5 },
     
     // Hindi assignments
     { teacher: 'US', subject: 'Hindi', sections: ['XA', 'XB', 'IXA', 'IXB', 'IXC', 'VIIIA', 'VIIA', 'VIA'], periodsPerWeek: 3 },
     // 'VE' is not a valid section name (removed); 8 sections × 3 = 24 ✓
-    { teacher: 'NJ', subject: 'Hindi', sections: ['XC', 'XD', 'VID', 'VIIIB', 'VIIIF', 'VIIB', 'VIIF', 'VIB'], periodsPerWeek: 3 },
-    { teacher: 'RS2', subject: 'Hindi', sections: ['IXD', 'IXE', 'IXF', 'VIID', 'VIIE', 'VIIF', 'VIIID', 'VIIIE', 'VIIIF', 'VIE'], periodsPerWeek: 3 },
+    { teacher: 'NJ', subject: 'Hindi', sections: ['XC', 'XD', 'VID', 'VIIIB', 'VIIIF', 'VIIB', 'VIB'], periodsPerWeek: 3 },
+    { teacher: 'RS2', subject: 'Hindi', sections: ['IXD', 'IXE', 'IXF', 'VIID', 'VIIE', 'VIIID', 'VIIIE', 'VIIIF', 'VIE'], periodsPerWeek: 3 },
     { teacher: 'GC', subject: 'Hindi', sections: ['VIIID', 'VIIIE', 'VIIIF', 'VIIA', 'VIIB', 'VIIC', 'VIID', 'VID'], periodsPerWeek: 3 },
     { teacher: 'PR', subject: 'Hindi', sections: ['XE', 'VIIIA', 'VIIIB', 'VIIIC', 'VIA', 'VIIB', 'VIIC', 'VIIIC', 'VIIIF', 'VIC'], periodsPerWeek: 3 },
     
@@ -621,7 +621,7 @@ async function main() {
     { teacher: 'AS2', subject: 'Nepali', sections: ['XC', 'IXC', 'VIIIC', 'VIC', 'VIIA'], periodsPerWeek: 4 },
     { teacher: 'KG', subject: 'Nepali', sections: ['XE', 'IXE', 'VIIIE', 'VIIE', 'VIE'], periodsPerWeek: 4 },
     { teacher: 'JBK', subject: 'Nepali', sections: ['XD', 'IXD', 'VIID', 'VID', 'VIIE'], periodsPerWeek: 4 },
-    { teacher: 'AG', subject: 'Nepali', sections: ['IXF', 'VIIIF', 'VIIF', 'VIIC', 'VIIIC', 'VIID', 'VIB', 'VIC', 'VID'], periodsPerWeek: 3 },
+    { teacher: 'AG', subject: 'Nepali', sections: ['IXF', 'VIIIF', 'VIIC', 'VIIIC', 'VIID', 'VIB', 'VIC', 'VID'], periodsPerWeek: 3 },
     { teacher: 'AS3', subject: 'Nepali', sections: ['VIIID', 'VIIC', 'VIB', 'VIIIE', 'VIIE', 'VIIA', 'VIE', 'VIA'], periodsPerWeek: 3 },
     
     // Commerce assignments
@@ -647,7 +647,7 @@ async function main() {
     { teacher: 'KC', subject: 'Social Studies', sections: ['XC', 'XD', 'IXC', 'IXD', 'VIIIB'], periodsPerWeek: 4 },
     { teacher: 'KT', subject: 'Social Studies', sections: ['XE', 'IXE', 'IXF', 'VIIIF'], periodsPerWeek: 4 },
     { teacher: 'ARS', subject: 'Social Studies', sections: ['VIIID', 'VIIC', 'VIIE', 'VIB', 'VIC'], periodsPerWeek: 4 },
-    { teacher: 'SJ', subject: 'Social Studies', sections: ['VIIIE', 'VIID', 'VIIF', 'VIE', 'VID'], periodsPerWeek: 4 },
+    { teacher: 'SJ', subject: 'Social Studies', sections: ['VIIIE', 'VIID', 'VIE', 'VID'], periodsPerWeek: 4 },
     
     // Home Science assignments
     { teacher: 'LK', subject: 'Home Science', sections: ['XIIA', 'XIIC', 'XIIF', 'XIA', 'XIC', 'VIIA'], periodsPerWeek: 4 },
@@ -658,10 +658,10 @@ async function main() {
     { teacher: 'DRK', subject: 'Computer Science', sections: ['XIIA', 'XIE', 'XA', 'XB', 'XC'], periodsPerWeek: 4 },
     { teacher: 'RK2', subject: 'Computer Science', sections: ['XIA', 'XD', 'XE', 'IXC', 'IXD', 'IXE', 'IXF'], periodsPerWeek: 3 },
     { teacher: 'SN', subject: 'Computer Science', sections: ['VIIIA', 'VIIIB', 'VIIIC', 'VIIID', 'VIIIE', 'VIIIF', 'VIIA', 'VIIB', 'VIIC', 'VIID'], periodsPerWeek: 2 },
-    { teacher: 'PA', subject: 'Computer Science', sections: ['VIIE', 'VIIF', 'VIA', 'VIB', 'VIC', 'VID', 'VIE'], periodsPerWeek: 3 },
+    { teacher: 'PA', subject: 'Computer Science', sections: ['VIIE', 'VIA', 'VIB', 'VIC', 'VID', 'VIE'], periodsPerWeek: 3 },
     
     // French assignments
-    { teacher: 'JS2', subject: 'French', sections: ['VIIIA', 'VIIIB', 'VIIIC', 'VIIID', 'VIIIE', 'VIIIF', 'VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE', 'VIIF', 'VIA', 'VIB', 'VIC', 'VID', 'VIE'], periodsPerWeek: 1 },
+    { teacher: 'JS2', subject: 'French', sections: ['VIIIA', 'VIIIB', 'VIIIC', 'VIIID', 'VIIIE', 'VIIIF', 'VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE', 'VIA', 'VIB', 'VIC', 'VID', 'VIE'], periodsPerWeek: 1 },
     
     // ── W.E. (Work Experience) assignments ────────────────────────────────────
     // Rules:
@@ -680,7 +680,7 @@ async function main() {
     { teacher: 'KSM', subject: 'Dance', sections: ['VIIID', 'IXA', 'IXD'],                 periodsPerWeek: 1 },
 
     // Art — Mr. Raja Man Karmacharya (RMK) + Mr. Manoj Shakya Panju (MSP)
-    { teacher: 'RMK', subject: 'Art', sections: ['VIC', 'VIIC', 'VIIF'],                         periodsPerWeek: 1 },
+    { teacher: 'RMK', subject: 'Art', sections: ['VIC', 'VIIC'],                                 periodsPerWeek: 1 },
     { teacher: 'MSP', subject: 'Art', sections: ['VIIIC', 'VIIIF', 'IXC', 'IXF'],               periodsPerWeek: 1 },
 
     // Music (Vocal / Instrumental) — SPR, HDP, BTK, NT
@@ -694,7 +694,7 @@ async function main() {
     // No workload cap applies to ST for Yoga — she covers all eligible sections.
     { teacher: 'ST', subject: 'Yoga', sections: [
       'VIA', 'VIB', 'VIC', 'VID', 'VIE',
-      'VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE', 'VIIF',
+      'VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE',
       'VIIIA', 'VIIIB', 'VIIIC', 'VIIID', 'VIIIE', 'VIIIF',
       'IXA', 'IXB', 'IXC', 'IXD', 'IXE', 'IXF',
       'XA', 'XB', 'XC', 'XD', 'XE',
@@ -707,7 +707,7 @@ async function main() {
     // Both teachers are assigned to all 40 sections so the scheduler can pick either.
     { teacher: 'PM3', subject: 'Library', sections: [
       'VIA', 'VIB', 'VIC', 'VID', 'VIE',
-      'VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE', 'VIIF',
+      'VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE',
       'VIIIA', 'VIIIB', 'VIIIC', 'VIIID', 'VIIIE', 'VIIIF',
       'IXA', 'IXB', 'IXC', 'IXD', 'IXE', 'IXF',
       'XA', 'XB', 'XC', 'XD', 'XE',
@@ -716,7 +716,7 @@ async function main() {
     ], periodsPerWeek: 1 },
     { teacher: 'OPS', subject: 'Library', sections: [
       'VIA', 'VIB', 'VIC', 'VID', 'VIE',
-      'VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE', 'VIIF',
+      'VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE',
       'VIIIA', 'VIIIB', 'VIIIC', 'VIIID', 'VIIIE', 'VIIIF',
       'IXA', 'IXB', 'IXC', 'IXD', 'IXE', 'IXF',
       'XA', 'XB', 'XC', 'XD', 'XE',
@@ -727,21 +727,21 @@ async function main() {
     // Games — sports teachers assigned to all sections (2 periods each)
     // Using 5 teachers to spread; each gets 8 sections × 2 = 16 periods (target 36 filled via Phase 2 top-up)
     { teacher: 'DRA', subject: 'Games', sections: ['VIA', 'VIB', 'VIC', 'VID', 'VIE', 'VIIA', 'VIIB', 'VIIC'], periodsPerWeek: 2 },
-    { teacher: 'NR',  subject: 'Games', sections: ['VIID', 'VIIE', 'VIIF', 'VIIIA', 'VIIIB', 'VIIIC', 'VIIID', 'VIIIE'], periodsPerWeek: 2 },
+    { teacher: 'NR',  subject: 'Games', sections: ['VIID', 'VIIE', 'VIIIA', 'VIIIB', 'VIIIC', 'VIIID', 'VIIIE'], periodsPerWeek: 2 },
     { teacher: 'BKK', subject: 'Games', sections: ['VIIIF', 'IXA', 'IXB', 'IXC', 'IXD', 'IXE', 'IXF', 'XA'], periodsPerWeek: 2 },
     { teacher: 'PM2', subject: 'Games', sections: ['XB', 'XC', 'XD', 'XE', 'XIA', 'XIB', 'XIC', 'XID'], periodsPerWeek: 2 },
     { teacher: 'AB',  subject: 'Games', sections: ['XIE', 'XIF', 'XIIA', 'XIIB', 'XIIC', 'XIID', 'XIIE', 'XIIF'], periodsPerWeek: 2 },
 
     // Lab assistants - support Science/Physics/Chemistry/Biology
     { teacher: 'AT', subject: 'Science', sections: ['VIA', 'VIB', 'VIC', 'VID', 'VIE'], periodsPerWeek: 1 },
-    { teacher: 'DB', subject: 'Science', sections: ['VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE', 'VIIF'], periodsPerWeek: 1 },
+    { teacher: 'DB', subject: 'Science', sections: ['VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE'], periodsPerWeek: 1 },
     { teacher: 'SKM', subject: 'Physics', sections: ['IXA', 'IXB', 'IXC', 'IXD', 'IXE', 'IXF'], periodsPerWeek: 1 },
     { teacher: 'RKM', subject: 'Chemistry', sections: ['IXA', 'IXB', 'IXC', 'IXD', 'IXE', 'IXF'], periodsPerWeek: 1 },
     { teacher: 'AM', subject: 'Biology', sections: ['IXA', 'IXB', 'IXC', 'IXD', 'IXE', 'IXF'], periodsPerWeek: 1 },
 
     // Innovation — exactly 1 period per section per week (hard constraint R5-fixed).
     // VI–VIII: UM (lab/innovation incharge for junior school)
-    { teacher: 'UM', subject: 'Innovation', sections: ['VIA', 'VIB', 'VIC', 'VID', 'VIE', 'VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE', 'VIIF', 'VIIIA', 'VIIIB', 'VIIIC', 'VIIID', 'VIIIE', 'VIIIF'], periodsPerWeek: 1 },
+    { teacher: 'UM', subject: 'Innovation', sections: ['VIA', 'VIB', 'VIC', 'VID', 'VIE', 'VIIA', 'VIIB', 'VIIC', 'VIID', 'VIIE', 'VIIIA', 'VIIIB', 'VIIIC', 'VIIID', 'VIIIE', 'VIIIF'], periodsPerWeek: 1 },
     // IX–X: RS1 (grade IX coordinator) and DKM (grade X coordinator) as Innovation incharges
     { teacher: 'RS1', subject: 'Innovation', sections: ['IXA', 'IXB', 'IXC', 'IXD', 'IXE', 'IXF'], periodsPerWeek: 1 },
     { teacher: 'DKM', subject: 'Innovation', sections: ['XA', 'XB', 'XC', 'XD', 'XE'], periodsPerWeek: 1 },

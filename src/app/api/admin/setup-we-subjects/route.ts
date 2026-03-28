@@ -113,7 +113,18 @@ export async function POST() {
     log.push('Innovation subject not found — skipped');
   }
 
-  // 6. Fix Ms. Deepa Devi Subedi abbreviation DS2 → DS
+  // 6. Remove non-existent section VIIF and all its data
+  const viif = await db.section.findUnique({ where: { name: 'VIIF' } });
+  if (viif) {
+    await db.timetableSlot.deleteMany({ where: { sectionId: viif.id } });
+    await db.teacherSubject.deleteMany({ where: { sectionId: viif.id } });
+    await db.section.delete({ where: { id: viif.id } });
+    log.push('Deleted section VIIF and all its timetable/assignment data');
+  } else {
+    log.push('Section VIIF not found — already removed or never existed');
+  }
+
+  // 7. Fix Ms. Deepa Devi Subedi abbreviation DS2 → DS
   const dds = await db.teacher.findFirst({ where: { name: 'Ms. Deepa Devi Subedi' } });
   if (dds && dds.abbreviation !== 'DS') {
     const conflict = await db.teacher.findFirst({ where: { abbreviation: 'DS' } });

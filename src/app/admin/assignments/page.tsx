@@ -161,6 +161,7 @@ export default function AssignmentsPage() {
     .map((n) => subjects.find((s) => s.name.toLowerCase() === n.toLowerCase()))
     .filter((s): s is Subject => s !== undefined);
   const lang3rdIds = new Set(lang3rdSubjects.map((s) => s.id));
+  const lang2ndIds = new Set(lang2ndSubjects.map((s) => s.id));
 
   // Science vs Phy/Chem/Bio split
   const LOWER_GRADES = new Set(['VI', 'VII', 'VIII']);
@@ -205,7 +206,8 @@ export default function AssignmentsPage() {
   const gradeSubjectIds = [
     ...rawGradeSubjectIds.filter((id) => {
       if (weActivityIds.has(id) || weLegacyIds.has(id)) return false;    // replaced by W.E. virtual
-      if (isLowerGrade && lang3rdIds.has(id)) return false;             // replaced by 2nd/3rd Lang virtuals
+      if (isLowerGrade && lang2ndIds.has(id)) return false;             // replaced by 2nd Lang virtual
+      if (isLowerGrade && lang3rdIds.has(id)) return false;             // replaced by 3rd Lang virtual
       if (isLowerGrade && separateScienceIds.has(id)) return false;     // Phy/Chem/Bio hidden for VI–VIII
       if (!isLowerGrade && scienceId && id === scienceId) return false;  // Science hidden for IX–XII
       return true;
@@ -584,7 +586,7 @@ export default function AssignmentsPage() {
                     const weAssigned      = weActivitySubjects.some((s) => sectionAssignments[s.id]);
                     const lang2ndAssigned = isLowerGrade && lang2ndSubjects.some((s) => sectionAssignments[s.id]);
                     const lang3rdAssigned = isLowerGrade && lang3rdSubjects.some((s) => sectionAssignments[s.id]);
-                    const specialIds      = new Set([...weActivityIds, ...weLegacyIds, ...(isLowerGrade ? lang3rdIds : [])]);
+                    const specialIds      = new Set([...weActivityIds, ...weLegacyIds, ...(isLowerGrade ? [...lang2ndIds, ...lang3rdIds] : [])]);
                     const nonSpecial      = Object.keys(sectionAssignments).filter((id) => !specialIds.has(id)).length;
                     const assignedCount   = nonSpecial + (weAssigned ? 1 : 0) + (lang2ndAssigned ? 1 : 0) + (lang3rdAssigned ? 1 : 0);
                     const totalNeeded = gradeSubjectIds.length;

@@ -94,7 +94,14 @@ export async function POST() {
   });
   log.push(`Fixed W.E. periods: ${fix2.count} → 2/week (VI–IX), ${fix1.count} → 1/week (X)`);
 
-  // 4. Fix Ms. Deepa Devi Subedi abbreviation DS2 → DS
+  // 4. Fix language periods: 2nd Lang → 6/week, 3rd Lang → 4/week
+  const lang2ndSubs = await db.subject.findMany({ where: { name: { in: ['Hindi 2L','Nepali 2L'] } }, select: { id: true } });
+  const lang3rdSubs = await db.subject.findMany({ where: { name: { in: ['Hindi','Nepali','French'] } }, select: { id: true } });
+  const fl2 = await db.teacherSubject.updateMany({ where: { subjectId: { in: lang2ndSubs.map(s=>s.id) } }, data: { periodsPerWeek: 6 } });
+  const fl3 = await db.teacherSubject.updateMany({ where: { subjectId: { in: lang3rdSubs.map(s=>s.id) } }, data: { periodsPerWeek: 4 } });
+  log.push(`Lang periods: ${fl2.count} × 2nd Lang → 6/week, ${fl3.count} × 3rd Lang → 4/week`);
+
+  // 5. Fix Ms. Deepa Devi Subedi abbreviation DS2 → DS
   const dds = await db.teacher.findFirst({ where: { name: 'Ms. Deepa Devi Subedi' } });
   if (dds && dds.abbreviation !== 'DS') {
     const conflict = await db.teacher.findFirst({ where: { abbreviation: 'DS' } });

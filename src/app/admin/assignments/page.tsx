@@ -255,7 +255,7 @@ export default function AssignmentsPage() {
       : (subjName ?? assignment?.subject.name ?? '');
     const wePeriodsDefault = ['VI','VII','VIII','IX'].includes(section.grade.name) ? 2 : 1;
     const resolvedPeriods = isMulti
-      ? (isWE ? wePeriodsDefault : 1)
+      ? (isWE ? wePeriodsDefault : isLang2nd ? 6 : isLang3rd ? 4 : 1)
       : (assignment?.periodsPerWeek ?? suggestPeriodsPerWeek(resolvedSubjectId, section.grade.name));
 
     setEditAssignment(isMulti ? undefined : assignment);

@@ -272,23 +272,26 @@ export async function suggestSubstitutes(
   const slots: SuggestedSlot[] = resolvedSlots.map(({ slot, context: slotContext }) => {
     const rawCandidates = slotContext.subjectId ? (subjectCandidates.get(slotContext.subjectId) ?? []) : [];
     const assignedEntry = getSubstituteNoteEntry(slot.notes, context.dateKey, teacherId);
-    const eligible = rawCandidates.filter((candidate) => {
-      if (candidate.id === teacherId) return false;
-      if (!candidate.isActive) return false;
-      if (context.absentToday.has(candidate.id)) return false;
-      if (assignedEntry?.substituteTeacherId !== candidate.id && context.teacherBusy.has(`${candidate.id}|${slot.timeSlotId}`)) return false;
-      if (context.unavailableSet.has(`${candidate.id}|${slot.timeSlotId}`)) return false;
-      // Exclude teachers already at the daily substitute limit (unless they are the current assignee being shown)
-      const currentSubCount = context.substituteDayCount.get(candidate.id) ?? 0;
-      if (assignedEntry?.substituteTeacherId !== candidate.id && currentSubCount >= MAX_SUBSTITUTE_PERIODS_PER_DAY) return false;
-      return true;
-    });
+    const assignedId = assignedEntry?.substituteTeacherId;
 
-    const scored = eligible.map((candidate) => {
+    const isEligible = (candidateId: string, isActive: boolean): boolean => {
+      if (candidateId === teacherId) return false;
+      if (!isActive) return false;
+      if (context.absentToday.has(candidateId)) return false;
+      if (assignedId !== candidateId && context.teacherBusy.has(`${candidateId}|${slot.timeSlotId}`)) return false;
+      if (context.unavailableSet.has(`${candidateId}|${slot.timeSlotId}`)) return false;
+      const currentSubCount = context.substituteDayCount.get(candidateId) ?? 0;
+      if (assignedId !== candidateId && currentSubCount >= MAX_SUBSTITUTE_PERIODS_PER_DAY) return false;
+      return true;
+    };
+
+    const scoreCandidate = (candidate: { id: string; name: string; abbreviation: string; department?: string | null; isHOD: boolean; targetWorkload: number; currentWorkload: number; teachableGrades: string }, isGeneralFallback: boolean) => {
       let score = 0;
       const reasons: string[] = [];
 
-      if (slotContext.subjectId && directAssignments.get(`${slotContext.subjectId}|${slot.sectionId}`) === candidate.id) {
+      if (isGeneralFallback) {
+        reasons.push('General substitute');
+      } else if (slotContext.subjectId && directAssignments.get(`${slotContext.subjectId}|${slot.sectionId}`) === candidate.id) {
         score += WEIGHTS.DIRECT_SUBJECT_TEACHER;
         reasons.push('Direct assignment for this class');
       }
@@ -328,14 +331,35 @@ export async function suggestSubstitutes(
         reasons.push('HOD (lower priority)');
       }
 
-      return {
-        id: candidate.id,
-        name: candidate.name,
-        abbreviation: candidate.abbreviation,
-        score,
-        reasons,
-      };
-    }).sort((a, b) => b.score - a.score);
+      return { id: candidate.id, name: candidate.name, abbreviation: candidate.abbreviation, score, reasons };
+    };
+
+    // Primary: subject-matched eligible teachers
+    const eligible = rawCandidates.filter((c) => isEligible(c.id, c.isActive));
+    let scored = eligible.map((c) => scoreCandidate(c, false)).sort((a, b) => b.score - a.score);
+
+    // Fallback: if no subject-matched teacher is free, open up to ALL available teachers
+    if (scored.length === 0) {
+      const primaryIds = new Set(rawCandidates.map((c) => c.id));
+      const fallback = context.teachers
+        .filter((t) => !primaryIds.has(t.id) && isEligible(t.id, t.isActive))
+        .map((t) => ({ ...t, currentWorkload: context.liveTeacherWorkload.get(t.id) ?? t.currentWorkload }));
+      scored = fallback.map((c) => scoreCandidate(c, true)).sort((a, b) => b.score - a.score);
+    }
+
+    // Always include the currently-assigned substitute in the list so it shows in the dropdown
+    if (assignedId && !scored.some((s) => s.id === assignedId)) {
+      const assignedTeacher = context.teachers.find((t) => t.id === assignedId);
+      if (assignedTeacher) {
+        scored.push({
+          id: assignedTeacher.id,
+          name: assignedTeacher.name,
+          abbreviation: assignedTeacher.abbreviation,
+          score: 0,
+          reasons: ['Currently assigned'],
+        });
+      }
+    }
 
     return {
       slotId: slot.id,
@@ -439,19 +463,6 @@ export async function assignSubstituteToSlot(args: {
     }
 
     const slotContext = resolveSlotContext(currentSlot, absentTeacher);
-    if (!slotContext.subjectId) {
-      throw new Error('Cannot assign a substitute to a slot without a subject');
-    }
-
-    const mapping = await tx.teacherSubject.findFirst({
-      where: {
-        teacherId: substituteTeacher.id,
-        subjectId: slotContext.subjectId,
-      },
-    });
-    if (!mapping) {
-      throw new Error('Substitute teacher does not teach this subject');
-    }
 
     // Fetch all slots for the day (needed for both period-conflict and daily-count checks)
     const allSlotsToday = await tx.timetableSlot.findMany({

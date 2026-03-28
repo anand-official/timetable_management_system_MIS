@@ -130,16 +130,36 @@ export default function AssignmentsPage() {
   const [saving, setSaving] = useState(false);
   const [weTeacherIds, setWeTeacherIds] = useState<Record<string, string>>({});
 
-  const WE_ACTIVITY_NAMES = ['Art', 'Music', 'Dance'] as const;
-  const WE_VIRTUAL_ID = '__WE_GROUP__';
+  // ── Virtual column IDs ──────────────────────────────────────────────────
+  const WE_VIRTUAL_ID      = '__WE_GROUP__';
+  const LANG2ND_VIRTUAL_ID = '__LANG2ND__';
 
-  // Art / Music / Dance subject objects from the full subjects list
+  // W.E. activities
+  const WE_ACTIVITY_NAMES = ['Art', 'Music', 'Dance'] as const;
   const weActivitySubjects = WE_ACTIVITY_NAMES
     .map((n) => subjects.find((s) => s.name.toLowerCase() === n.toLowerCase()))
     .filter((s): s is Subject => s !== undefined);
   const weActivityIds = new Set(weActivitySubjects.map((s) => s.id));
 
-  const isWESubject = editSubjectName.toLowerCase() === 'work experience' || editSubjectName === WE_VIRTUAL_ID;
+  // 2nd Language (Hindi + Nepali, VI–VIII only)
+  const LANG2ND_NAMES = ['Hindi', 'Nepali'] as const;
+  const lang2ndSubjects = LANG2ND_NAMES
+    .map((n) => subjects.find((s) => s.name.toLowerCase() === n.toLowerCase()))
+    .filter((s): s is Subject => s !== undefined);
+  const lang2ndIds = new Set(lang2ndSubjects.map((s) => s.id));
+
+  // Science vs Phy/Chem/Bio split
+  const LOWER_GRADES = new Set(['VI', 'VII', 'VIII']);
+  const isLowerGrade = LOWER_GRADES.has(selectedGrade);
+  const scienceId = subjects.find((s) => s.name.toLowerCase() === 'science')?.id;
+  const separateScienceIds = new Set(
+    subjects
+      .filter((s) => ['physics', 'chemistry', 'biology'].includes(s.name.toLowerCase()))
+      .map((s) => s.id)
+  );
+
+  const isWESubject   = editSubjectName.toLowerCase() === 'work experience' || editSubjectName === WE_VIRTUAL_ID;
+  const isLang2ndEdit = editSubjectName === LANG2ND_VIRTUAL_ID;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -166,10 +186,17 @@ export default function AssignmentsPage() {
   const rawGradeSubjectIds = gradeSubjects[selectedGrade] || [];
   const gradeSections = sections.filter((section) => section.grade.name === selectedGrade);
 
-  // Always show a single W.E. column (replacing any separate Art/Music/Dance columns)
+  // Build display column list with virtual groupings and grade-based science split
   const gradeSubjectIds = [
-    ...rawGradeSubjectIds.filter((id) => !weActivityIds.has(id)),
+    ...rawGradeSubjectIds.filter((id) => {
+      if (weActivityIds.has(id)) return false;                          // replaced by W.E. virtual
+      if (isLowerGrade && lang2ndIds.has(id)) return false;            // replaced by 2nd Lang virtual
+      if (isLowerGrade && separateScienceIds.has(id)) return false;    // Phy/Chem/Bio hidden for VI–VIII
+      if (!isLowerGrade && scienceId && id === scienceId) return false; // Science hidden for IX–XII
+      return true;
+    }),
     ...(weActivitySubjects.length > 0 ? [WE_VIRTUAL_ID] : []),
+    ...(isLowerGrade && lang2ndSubjects.length > 0 ? [LANG2ND_VIRTUAL_ID] : []),
   ];
 
   const suggestPeriodsPerWeek = (subjectId: string, gradeName: string) => {
@@ -197,20 +224,27 @@ export default function AssignmentsPage() {
   }, [editOpen, newTeacherId, editEligibleTeachers]);
 
   const openEditForCell = (section: Section, assignment?: Assignment, subjId?: string, subjName?: string) => {
-    const isWE = subjId === WE_VIRTUAL_ID || subjName === WE_VIRTUAL_ID;
-    const resolvedSubjectId = isWE ? WE_VIRTUAL_ID : (subjId ?? assignment?.subjectId ?? '');
-    const resolvedName = isWE ? 'Work Experience' : (subjName ?? assignment?.subject.name ?? '');
-    const resolvedPeriods = isWE ? 1 : (assignment?.periodsPerWeek ?? suggestPeriodsPerWeek(resolvedSubjectId, section.grade.name));
+    const isWE     = subjId === WE_VIRTUAL_ID      || subjName === WE_VIRTUAL_ID;
+    const isLang2nd = subjId === LANG2ND_VIRTUAL_ID || subjName === LANG2ND_VIRTUAL_ID;
+    const isMulti  = isWE || isLang2nd;
 
-    setEditAssignment(isWE ? undefined : assignment);
+    const resolvedSubjectId = isMulti ? (isWE ? WE_VIRTUAL_ID : LANG2ND_VIRTUAL_ID) : (subjId ?? assignment?.subjectId ?? '');
+    const resolvedName = isMulti
+      ? (isWE ? 'Work Experience' : LANG2ND_VIRTUAL_ID)
+      : (subjName ?? assignment?.subject.name ?? '');
+    const resolvedPeriods = isMulti ? 1 : (assignment?.periodsPerWeek ?? suggestPeriodsPerWeek(resolvedSubjectId, section.grade.name));
+
+    setEditAssignment(isMulti ? undefined : assignment);
     setEditSection(section);
     setEditSubjectId(resolvedSubjectId);
     setEditSubjectName(resolvedName);
     setEditPeriodsPerWeek(String(resolvedPeriods));
-    setNewTeacherId(isWE ? '' : (assignment?.teacherId ?? ''));
-    // Pre-populate existing W.E. activity teacher assignments
+    setNewTeacherId(isMulti ? '' : (assignment?.teacherId ?? ''));
+
+    // Pre-populate multi-teacher selections
     const initWeTeachers: Record<string, string> = {};
-    for (const subj of weActivitySubjects) {
+    const multiSubjects = isWE ? weActivitySubjects : isLang2nd ? lang2ndSubjects : [];
+    for (const subj of multiSubjects) {
       const existing = coverageMap[section.id]?.[subj.id];
       if (existing) initWeTeachers[subj.id] = existing.teacherId;
     }
@@ -218,48 +252,67 @@ export default function AssignmentsPage() {
     setEditOpen(true);
   };
 
+  // Shared save helper for multi-subject virtual columns (W.E. and 2nd Language)
+  const saveMultiSubjectGroup = async (groupSubjects: Subject[], label: string) => {
+    const sectionId = editSection?.id ?? editAssignment?.section.id ?? '';
+    if (!sectionId) { toast.error('Section is missing'); return false; }
+    const periodsPerWeek = Number(editPeriodsPerWeek);
+    if (!Number.isFinite(periodsPerWeek) || periodsPerWeek <= 0) {
+      toast.error('Enter a valid periods/week value');
+      return false;
+    }
+    let saved = 0;
+    for (const subj of groupSubjects) {
+      const teacherId = weTeacherIds[subj.id];
+      if (!teacherId) continue;
+      const existing = coverageMap[sectionId]?.[subj.id];
+      if (existing) {
+        const res = await fetch('/api/assignments', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ assignmentId: existing.id, newTeacherId: teacherId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Failed to update ${subj.name} assignment`);
+      } else {
+        const res = await fetch('/api/assignments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ teacherId, subjectId: subj.id, sectionId, periodsPerWeek }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Failed to create ${subj.name} assignment`);
+      }
+      saved++;
+    }
+    if (saved === 0) { toast.error(`Select at least one ${label} teacher`); return false; }
+    toast.success(`${label} — ${saved} assignment${saved === 1 ? '' : 's'} saved`);
+    return true;
+  };
+
   const handleSave = async () => {
     // W.E. subject: save Art / Music / Dance assignments separately
     if (isWESubject && weActivitySubjects.length > 0) {
-      const sectionId = editSection?.id ?? editAssignment?.section.id ?? '';
-      if (!sectionId) { toast.error('Section is missing'); return; }
-      const periodsPerWeek = Number(editPeriodsPerWeek);
-      if (!Number.isFinite(periodsPerWeek) || periodsPerWeek <= 0) {
-        toast.error('Enter a valid periods/week value');
-        return;
-      }
       setSaving(true);
       try {
-        let saved = 0;
-        for (const subj of weActivitySubjects) {
-          const teacherId = weTeacherIds[subj.id];
-          if (!teacherId) continue;
-          const existing = coverageMap[sectionId]?.[subj.id];
-          if (existing) {
-            const res = await fetch('/api/assignments', {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ assignmentId: existing.id, newTeacherId: teacherId }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || `Failed to update ${subj.name} assignment`);
-          } else {
-            const res = await fetch('/api/assignments', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ teacherId, subjectId: subj.id, sectionId, periodsPerWeek }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || `Failed to create ${subj.name} assignment`);
-          }
-          saved++;
-        }
-        if (saved === 0) { toast.error('Select at least one activity teacher'); return; }
-        toast.success(`W.E. assigned — ${saved} activit${saved === 1 ? 'y' : 'ies'} saved`);
-        setEditOpen(false);
-        await load();
+        const ok = await saveMultiSubjectGroup(weActivitySubjects, 'W.E.');
+        if (ok) { setEditOpen(false); await load(); }
       } catch (error) {
         toast.error((error as Error).message || 'Failed to save W.E. assignments');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    // 2nd Language: save Hindi + Nepali assignments separately
+    if (isLang2ndEdit && lang2ndSubjects.length > 0) {
+      setSaving(true);
+      try {
+        const ok = await saveMultiSubjectGroup(lang2ndSubjects, '2nd Language');
+        if (ok) { setEditOpen(false); await load(); }
+      } catch (error) {
+        toast.error((error as Error).message || 'Failed to save 2nd Language assignments');
       } finally {
         setSaving(false);
       }
@@ -450,7 +503,21 @@ export default function AssignmentsPage() {
                           </th>
                         );
                       }
+                      if (subjectId === LANG2ND_VIRTUAL_ID) {
+                        return (
+                          <th key={LANG2ND_VIRTUAL_ID} className="min-w-[88px] px-1.5 py-2 text-center">
+                            <div className="inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+                              2nd Lang
+                            </div>
+                            <div className="mx-auto mt-0.5 max-w-[84px] text-[9px] font-normal leading-tight text-slate-400 dark:text-slate-500">
+                              Hindi / Nepali
+                            </div>
+                          </th>
+                        );
+                      }
                       const subject = subjects.find((item) => item.id === subjectId);
+                      const is3rdLang = isLowerGrade && subject &&
+                        ['hindi', 'nepali', 'french'].includes(subject.name.toLowerCase());
                       return (
                         <th key={subjectId} className="min-w-[72px] px-1.5 py-2 text-center">
                           <div className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${CATEGORY_COLOUR[subject?.category ?? ''] ?? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
@@ -461,6 +528,7 @@ export default function AssignmentsPage() {
                             title={subject?.name}
                           >
                             {subject?.name}
+                            {is3rdLang && <span className="ml-0.5 text-amber-500"> 3rd</span>}
                           </div>
                         </th>
                       );
@@ -471,10 +539,11 @@ export default function AssignmentsPage() {
                 <tbody>
                   {gradeSections.map((section, sectionIndex) => {
                     const sectionAssignments = coverageMap[section.id] ?? {};
-                    // For the WE virtual column, count it as assigned if any activity teacher exists
-                    const weAssigned = weActivitySubjects.some((s) => sectionAssignments[s.id]);
-                    const nonWeAssigned = Object.keys(sectionAssignments).filter((id) => !weActivityIds.has(id)).length;
-                    const assignedCount = nonWeAssigned + (weAssigned ? 1 : 0);
+                    const weAssigned     = weActivitySubjects.some((s) => sectionAssignments[s.id]);
+                    const lang2ndAssigned = isLowerGrade && lang2ndSubjects.some((s) => sectionAssignments[s.id]);
+                    const specialIds     = new Set([...weActivityIds, ...(isLowerGrade ? lang2ndIds : [])]);
+                    const nonSpecial     = Object.keys(sectionAssignments).filter((id) => !specialIds.has(id)).length;
+                    const assignedCount  = nonSpecial + (weAssigned ? 1 : 0) + (lang2ndAssigned ? 1 : 0);
                     const totalNeeded = gradeSubjectIds.length;
                     const complete = assignedCount >= totalNeeded;
 
@@ -496,6 +565,30 @@ export default function AssignmentsPage() {
                         </td>
 
                         {gradeSubjectIds.map((subjectId) => {
+                          if (subjectId === LANG2ND_VIRTUAL_ID) {
+                            const assigned = lang2ndSubjects.filter((s) => coverageMap[section.id]?.[s.id]);
+                            return (
+                              <td key={LANG2ND_VIRTUAL_ID} className="px-0.5 py-0.5">
+                                <button
+                                  onClick={() => openEditForCell(section, undefined, LANG2ND_VIRTUAL_ID)}
+                                  className="group h-full min-h-[40px] w-full rounded border border-transparent px-1.5 py-1 text-left transition hover:border-amber-200 hover:bg-amber-50 dark:hover:border-amber-500/30 dark:hover:bg-amber-500/10"
+                                >
+                                  {assigned.length > 0 ? (
+                                    assigned.map((s) => {
+                                      const a = coverageMap[section.id][s.id];
+                                      return (
+                                        <div key={s.id} className="text-[10px] leading-tight text-slate-500 dark:text-slate-400">
+                                          <span className="font-semibold text-slate-700 dark:text-slate-200">{s.name.slice(0, 3)}:</span> {a.teacher.abbreviation}
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <span className="text-[10px] text-slate-300 dark:text-slate-600">Add</span>
+                                  )}
+                                </button>
+                              </td>
+                            );
+                          }
                           if (subjectId === WE_VIRTUAL_ID) {
                             const assigned = weActivitySubjects.filter((s) => coverageMap[section.id]?.[s.id]);
                             return (
@@ -616,7 +709,7 @@ export default function AssignmentsPage() {
           <div className="space-y-4 py-2">
             <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               <div><span className="font-medium">Section:</span> {editSection?.name ?? editAssignment?.section.name}</div>
-              <div><span className="font-medium">Subject:</span> {editSubjectName}</div>
+              <div><span className="font-medium">Subject:</span> {isLang2ndEdit ? '2nd Language (Hindi / Nepali)' : editSubjectName}</div>
               {editAssignment ? (
                 <div>
                   <span className="font-medium">Current teacher:</span> {editAssignment.teacher.name} ({editAssignment.teacher.abbreviation})
@@ -681,11 +774,51 @@ export default function AssignmentsPage() {
                   );
                 })}
               </div>
+            ) : isLang2ndEdit && lang2ndSubjects.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">2nd Language — Hindi / Nepali teachers for this section</p>
+                {lang2ndSubjects.map((subj) => {
+                  const langTeachers = getEligibleTeachersForSectionSubject(teachers, subj, editGrade);
+                  return (
+                    <div key={subj.id}>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        {subj.name} Teacher <span className="font-normal text-slate-400">(2nd Language)</span>
+                      </label>
+                      <Select
+                        value={weTeacherIds[subj.id] ?? ''}
+                        onValueChange={(v) => setWeTeacherIds((prev) => ({ ...prev, [subj.id]: v }))}
+                      >
+                        <SelectTrigger className="text-sm">
+                          <SelectValue placeholder={`Select ${subj.name} teacher...`} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {langTeachers.map((teacher) => {
+                            const pct = teacher.targetWorkload > 0
+                              ? Math.round((teacher.assignedPeriods / teacher.targetWorkload) * 100)
+                              : 0;
+                            return (
+                              <SelectItem key={teacher.id} value={teacher.id}>
+                                {teacher.abbreviation} - {teacher.name} ({teacher.assignedPeriods}/{teacher.targetWorkload})
+                                {pct > 100 ? ' overloaded' : pct > 80 ? ' busy' : ''}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      {langTeachers.length === 0 && (
+                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">
+                          No eligible {subj.name} teachers found.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             ) : isWESubject && weActivitySubjects.length === 0 ? (
               <p className="text-xs text-amber-600 dark:text-amber-300">
                 Art, Music and Dance subjects not found in the database.
               </p>
-            ) : !isWESubject ? (
+            ) : !isWESubject && !isLang2ndEdit ? (
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
                   {editAssignment ? 'Replace with:' : 'Assign teacher:'}
@@ -724,7 +857,7 @@ export default function AssignmentsPage() {
             <Button
               size="sm"
               onClick={() => void handleSave()}
-              disabled={saving || (isWESubject ? Object.keys(weTeacherIds).length === 0 : !newTeacherId)}
+              disabled={saving || ((isWESubject || isLang2ndEdit) ? Object.values(weTeacherIds).filter(Boolean).length === 0 : !newTeacherId)}
             >
               {saving ? 'Saving...' : editAssignment ? 'Update' : 'Assign'}
             </Button>

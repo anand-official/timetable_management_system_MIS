@@ -255,6 +255,7 @@ export async function generateDailySubstitutePdf(args: {
         columns: [
           {
             width: '50%',
+            alignment: 'center',
             stack: [
               { text: '______________________________', fontSize: 9, color: '#0F172A' },
               { text: 'Principal', fontSize: 8.5, bold: true, color: '#334155', margin: [0, 3, 0, 0] },
@@ -263,7 +264,7 @@ export async function generateDailySubstitutePdf(args: {
           },
           {
             width: '50%',
-            alignment: 'right',
+            alignment: 'center',
             stack: [
               { text: '______________________________', fontSize: 9, color: '#0F172A' },
               { text: 'Time Table Incharge', fontSize: 8.5, bold: true, color: '#334155', margin: [0, 3, 0, 0] },

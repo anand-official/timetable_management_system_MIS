@@ -246,7 +246,7 @@ export function buildPdfContentBlocks(grid: TimetableGrid): any[] {
       margin: [0, 40, 0, 0],
       columns: [
         {
-          width: '50%',
+          width: 200,
           alignment: 'center',
           stack: [
             { text: '______________________________', fontSize: 9, color: '#0F172A' },
@@ -254,8 +254,9 @@ export function buildPdfContentBlocks(grid: TimetableGrid): any[] {
             { text: 'Retd. Col. Raju Peter', fontSize: 8, color: '#475569' },
           ],
         },
+        { width: '*', text: '' },
         {
-          width: '50%',
+          width: 200,
           alignment: 'center',
           stack: [
             { text: '______________________________', fontSize: 9, color: '#0F172A' },

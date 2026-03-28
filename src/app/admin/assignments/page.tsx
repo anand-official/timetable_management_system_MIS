@@ -166,13 +166,10 @@ export default function AssignmentsPage() {
   const rawGradeSubjectIds = gradeSubjects[selectedGrade] || [];
   const gradeSections = sections.filter((section) => section.grade.name === selectedGrade);
 
-  // Replace Art/Music/Dance columns with a single virtual W.E. column
-  const gradeHasWEActivities =
-    rawGradeSubjectIds.some((id) => weActivityIds.has(id)) ||
-    gradeSections.some((sec) => weActivitySubjects.some((s) => coverageMap[sec.id]?.[s.id]));
+  // Always show a single W.E. column (replacing any separate Art/Music/Dance columns)
   const gradeSubjectIds = [
     ...rawGradeSubjectIds.filter((id) => !weActivityIds.has(id)),
-    ...(gradeHasWEActivities ? [WE_VIRTUAL_ID] : []),
+    ...(weActivitySubjects.length > 0 ? [WE_VIRTUAL_ID] : []),
   ];
 
   const suggestPeriodsPerWeek = (subjectId: string, gradeName: string) => {

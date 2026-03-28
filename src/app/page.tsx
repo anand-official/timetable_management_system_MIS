@@ -258,6 +258,8 @@ export default function TimetableManagementSystem() {
   const [secondaryEditingSubjectId, setSecondaryEditingSubjectId] = useState('');
   const [secondaryEditingTeacherId, setSecondaryEditingTeacherId] = useState('');
   const [parallelLanguageBucket, setParallelLanguageBucket] = useState<CombinedSlotBucket | ''>('');
+  // W.E. slot editing: subjectId -> teacherId for Art/Music/Dance
+  const [weSlotTeachers, setWeSlotTeachers] = useState<Record<string, string>>({});
   
   // AI Analysis
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
@@ -704,6 +706,71 @@ export default function TimetableManagementSystem() {
     const plainNotes = getPlainSlotNotes(editingSlot.notes);
     const existingCombinedMetadata = parseCombinedSlotMetadata(editingSlot.notes);
 
+    // ── W.E. slot save ──
+    if (isEditingWESlot) {
+      const selectedOptions = weSlotActivitySubjects
+        .map((subj) => {
+          const teacherId = weSlotTeachers[subj.id];
+          if (!teacherId) return null;
+          const teacher = teachers.find((t) => t.id === teacherId);
+          if (!teacher) return null;
+          return { subj, teacher };
+        })
+        .filter((x): x is { subj: typeof weSlotActivitySubjects[0]; teacher: typeof teachers[0] } => x !== null);
+
+      if (selectedOptions.length === 0) {
+        toast.error('Select at least one activity teacher');
+        return;
+      }
+
+      const first = selectedOptions[0];
+      payload.subjectId = first.subj.id;
+      payload.teacherId = first.teacher.id;
+      payload.labTeacherId = selectedOptions[1]?.teacher.id ?? null;
+      payload.isWE = true;
+
+      const displayName = selectedOptions.map((o) => o.subj.name).join(' / ');
+      const displayCode = selectedOptions.map((o) => o.subj.code).join(' / ');
+      payload.notes = encodeCombinedSlotMetadata(
+        {
+          kind: 'combined-slot',
+          grade: editingSection?.grade.name,
+          displayName,
+          displayCode,
+          options: selectedOptions.map((o) => ({
+            subjectId: o.subj.id,
+            subjectName: o.subj.name,
+            subjectCode: o.subj.code,
+            teacherId: o.teacher.id,
+            teacherName: o.teacher.name,
+            teacherAbbreviation: o.teacher.abbreviation,
+            sharing: 'single' as const,
+          })),
+        },
+        plainNotes
+      );
+
+      try {
+        const response = await fetch('/api/timetable', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (data.slot) {
+          toast.success('W.E. slot updated');
+          fetchData();
+          setEditDialogOpen(false);
+          setEditingSlot({});
+        } else if (data.error) {
+          toast.error(data.error);
+        }
+      } catch {
+        toast.error('Failed to update W.E. slot');
+      }
+      return;
+    }
+
     if (parallelEditingEnabled) {
       if (!editingSlot.subjectId || !editingSlot.teacherId || !secondaryEditingSubjectId || !secondaryEditingTeacherId) {
         toast.error('Select both subjects and both teachers');
@@ -968,6 +1035,16 @@ export default function TimetableManagementSystem() {
     Boolean(secondaryEditingSubject) &&
     LANGUAGE_BUCKET_SUBJECT_NAMES.has(primaryEditingSubject!.name) &&
     LANGUAGE_BUCKET_SUBJECT_NAMES.has(secondaryEditingSubject!.name);
+
+  // W.E. slot editing
+  const WE_ACTIVITY_LABELS = ['Art', 'Music', 'Dance'] as const;
+  const weSlotActivitySubjects = WE_ACTIVITY_LABELS
+    .map((n) => subjects.find((s) => s.name.toLowerCase() === n.toLowerCase()))
+    .filter((s): s is typeof subjects[0] => s !== undefined);
+  const isEditingWESlot = editDialogOpen && (
+    editingSlot.isWE === true ||
+    weSlotActivitySubjects.some((s) => s.id === editingSlot.subjectId)
+  );
   const sectionSubjectSlotCount =
     editingSlot.sectionId && editingSlot.subjectId
       ? slots.filter(
@@ -994,10 +1071,27 @@ export default function TimetableManagementSystem() {
       setSecondaryEditingSubjectId('');
       setSecondaryEditingTeacherId('');
       setParallelLanguageBucket('');
+      setWeSlotTeachers({});
       return;
     }
 
     const metadata = parseCombinedSlotMetadata(editingSlot.notes);
+
+    // If this is a W.E. slot, populate per-activity teacher map
+    if (editingSlot.isWE) {
+      const init: Record<string, string> = {};
+      if (editingSlot.subjectId && editingSlot.teacherId) {
+        init[editingSlot.subjectId] = editingSlot.teacherId;
+      }
+      if (metadata) {
+        for (const opt of metadata.options) {
+          if (opt.subjectId && opt.teacherId) init[opt.subjectId] = opt.teacherId;
+        }
+      }
+      setWeSlotTeachers(init);
+      return;
+    }
+
     const secondaryOption = metadata?.options[1];
     setParallelEditingEnabled(Boolean(secondaryOption));
     setSecondaryEditingSubjectId(secondaryOption?.subjectId ?? '');
@@ -2924,6 +3018,40 @@ export default function TimetableManagementSystem() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {isEditingWESlot ? (
+              <>
+                <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+                  <span className="font-semibold">Work Experience</span> — assign Art, Music and Dance teachers
+                </div>
+                {weSlotActivitySubjects.map((subj) => {
+                  const eligible = getEligibleTeachersForSectionSubject(teachers, subj, editingSection?.grade.name);
+                  return (
+                    <div key={subj.id} className="space-y-1.5">
+                      <Label>{subj.name} Teacher</Label>
+                      <Select
+                        value={weSlotTeachers[subj.id] ?? ''}
+                        onValueChange={(v) => setWeSlotTeachers((prev) => ({ ...prev, [subj.id]: v }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={`Select ${subj.name} teacher...`} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {eligible.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.abbreviation} - {t.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {eligible.length === 0 && (
+                        <p className="text-xs text-amber-600">No eligible {subj.name} teachers found.</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            ) : (
+            <>
             <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <div>
                 <Label htmlFor="parallel-assignment" className="text-sm font-medium text-slate-700">Double assignment</Label>
@@ -3033,18 +3161,20 @@ export default function TimetableManagementSystem() {
                 )}
               </>
             )}
+            </>
+            )}
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2">
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   checked={editingSlot.isLab || false}
                   onChange={(e) => setEditingSlot(prev => ({ ...prev, isLab: e.target.checked }))}
                 />
                 Lab Period
               </label>
               <label className="flex items-center gap-2">
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   checked={editingSlot.isGames || false}
                   onChange={(e) => setEditingSlot(prev => ({ ...prev, isGames: e.target.checked }))}
                 />

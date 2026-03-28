@@ -184,8 +184,8 @@ export async function generateDailySubstitutePdf(args: {
       {
         columns: [
           logoDataUrl
-            ? { image: logoDataUrl, width: 54, margin: [0, 2, 12, 0] }
-            : { text: '', width: 54 },
+            ? { width: 150, stack: [{ image: logoDataUrl, width: 54, margin: [0, 2, 0, 0] }] }
+            : { text: '', width: 150 },
           {
             width: '*',
             stack: [

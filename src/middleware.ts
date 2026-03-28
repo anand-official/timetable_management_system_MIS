@@ -10,7 +10,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
 };
 
-const PUBLIC_PATH_PREFIXES = ['/auth', '/api/auth', '/api/admin/setup-we-subjects'];
+const PUBLIC_PATH_PREFIXES = ['/auth', '/api/auth'];
 
 function applySecurityHeaders(response: NextResponse) {
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {

@@ -131,13 +131,15 @@ export default function AssignmentsPage() {
   const [weTeacherIds, setWeTeacherIds] = useState<Record<string, string>>({});
 
   const WE_ACTIVITY_NAMES = ['Art', 'Music', 'Dance'] as const;
-  const isWESubject = /\bw\.?e\.?\b/i.test(editSubjectName) || editSubjectName.toLowerCase().includes('work experience');
-  // Find Art / Music / Dance subjects from the full subjects list
-  const weSubjects = isWESubject
-    ? WE_ACTIVITY_NAMES
-        .map((name) => subjects.find((s) => s.name.toLowerCase() === name.toLowerCase()))
-        .filter((s): s is Subject => s !== undefined)
-    : [];
+  const WE_VIRTUAL_ID = '__WE_GROUP__';
+
+  // Art / Music / Dance subject objects from the full subjects list
+  const weActivitySubjects = WE_ACTIVITY_NAMES
+    .map((n) => subjects.find((s) => s.name.toLowerCase() === n.toLowerCase()))
+    .filter((s): s is Subject => s !== undefined);
+  const weActivityIds = new Set(weActivitySubjects.map((s) => s.id));
+
+  const isWESubject = editSubjectName.toLowerCase() === 'work experience' || editSubjectName === WE_VIRTUAL_ID;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -161,8 +163,17 @@ export default function AssignmentsPage() {
     void load();
   }, [load]);
 
-  const gradeSubjectIds = gradeSubjects[selectedGrade] || [];
+  const rawGradeSubjectIds = gradeSubjects[selectedGrade] || [];
   const gradeSections = sections.filter((section) => section.grade.name === selectedGrade);
+
+  // Replace Art/Music/Dance columns with a single virtual W.E. column
+  const gradeHasWEActivities =
+    rawGradeSubjectIds.some((id) => weActivityIds.has(id)) ||
+    gradeSections.some((sec) => weActivitySubjects.some((s) => coverageMap[sec.id]?.[s.id]));
+  const gradeSubjectIds = [
+    ...rawGradeSubjectIds.filter((id) => !weActivityIds.has(id)),
+    ...(gradeHasWEActivities ? [WE_VIRTUAL_ID] : []),
+  ];
 
   const suggestPeriodsPerWeek = (subjectId: string, gradeName: string) => {
     const gradeMatches = assignments.filter(
@@ -189,23 +200,22 @@ export default function AssignmentsPage() {
   }, [editOpen, newTeacherId, editEligibleTeachers]);
 
   const openEditForCell = (section: Section, assignment?: Assignment, subjId?: string, subjName?: string) => {
-    const resolvedSubjectId = subjId ?? assignment?.subjectId ?? '';
-    const resolvedPeriods = assignment?.periodsPerWeek ?? suggestPeriodsPerWeek(resolvedSubjectId, section.grade.name);
+    const isWE = subjId === WE_VIRTUAL_ID || subjName === WE_VIRTUAL_ID;
+    const resolvedSubjectId = isWE ? WE_VIRTUAL_ID : (subjId ?? assignment?.subjectId ?? '');
+    const resolvedName = isWE ? 'Work Experience' : (subjName ?? assignment?.subject.name ?? '');
+    const resolvedPeriods = isWE ? 1 : (assignment?.periodsPerWeek ?? suggestPeriodsPerWeek(resolvedSubjectId, section.grade.name));
 
-    setEditAssignment(assignment);
+    setEditAssignment(isWE ? undefined : assignment);
     setEditSection(section);
     setEditSubjectId(resolvedSubjectId);
-    setEditSubjectName(subjName ?? assignment?.subject.name ?? '');
+    setEditSubjectName(resolvedName);
     setEditPeriodsPerWeek(String(resolvedPeriods));
-    setNewTeacherId(assignment?.teacherId ?? '');
+    setNewTeacherId(isWE ? '' : (assignment?.teacherId ?? ''));
     // Pre-populate existing W.E. activity teacher assignments
     const initWeTeachers: Record<string, string> = {};
-    for (const name of WE_ACTIVITY_NAMES) {
-      const subj = subjects.find((s) => s.name.toLowerCase() === name.toLowerCase());
-      if (subj) {
-        const existing = coverageMap[section.id]?.[subj.id];
-        if (existing) initWeTeachers[subj.id] = existing.teacherId;
-      }
+    for (const subj of weActivitySubjects) {
+      const existing = coverageMap[section.id]?.[subj.id];
+      if (existing) initWeTeachers[subj.id] = existing.teacherId;
     }
     setWeTeacherIds(initWeTeachers);
     setEditOpen(true);
@@ -213,7 +223,7 @@ export default function AssignmentsPage() {
 
   const handleSave = async () => {
     // W.E. subject: save Art / Music / Dance assignments separately
-    if (isWESubject && weSubjects.length > 0) {
+    if (isWESubject && weActivitySubjects.length > 0) {
       const sectionId = editSection?.id ?? editAssignment?.section.id ?? '';
       if (!sectionId) { toast.error('Section is missing'); return; }
       const periodsPerWeek = Number(editPeriodsPerWeek);
@@ -224,7 +234,7 @@ export default function AssignmentsPage() {
       setSaving(true);
       try {
         let saved = 0;
-        for (const subj of weSubjects) {
+        for (const subj of weActivitySubjects) {
           const teacherId = weTeacherIds[subj.id];
           if (!teacherId) continue;
           const existing = coverageMap[sectionId]?.[subj.id];
@@ -431,6 +441,18 @@ export default function AssignmentsPage() {
                       Section
                     </th>
                     {gradeSubjectIds.map((subjectId) => {
+                      if (subjectId === WE_VIRTUAL_ID) {
+                        return (
+                          <th key={WE_VIRTUAL_ID} className="min-w-[88px] px-1.5 py-2 text-center">
+                            <div className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${CATEGORY_COLOUR['Activity']}`}>
+                              WE
+                            </div>
+                            <div className="mx-auto mt-0.5 max-w-[84px] text-[9px] font-normal leading-tight text-slate-400 dark:text-slate-500">
+                              Work Experience
+                            </div>
+                          </th>
+                        );
+                      }
                       const subject = subjects.find((item) => item.id === subjectId);
                       return (
                         <th key={subjectId} className="min-w-[72px] px-1.5 py-2 text-center">
@@ -452,9 +474,12 @@ export default function AssignmentsPage() {
                 <tbody>
                   {gradeSections.map((section, sectionIndex) => {
                     const sectionAssignments = coverageMap[section.id] ?? {};
-                    const assignedCount = Object.keys(sectionAssignments).length;
+                    // For the WE virtual column, count it as assigned if any activity teacher exists
+                    const weAssigned = weActivitySubjects.some((s) => sectionAssignments[s.id]);
+                    const nonWeAssigned = Object.keys(sectionAssignments).filter((id) => !weActivityIds.has(id)).length;
+                    const assignedCount = nonWeAssigned + (weAssigned ? 1 : 0);
                     const totalNeeded = gradeSubjectIds.length;
-                    const complete = assignedCount === totalNeeded;
+                    const complete = assignedCount >= totalNeeded;
 
                     return (
                       <tr
@@ -474,6 +499,30 @@ export default function AssignmentsPage() {
                         </td>
 
                         {gradeSubjectIds.map((subjectId) => {
+                          if (subjectId === WE_VIRTUAL_ID) {
+                            const assigned = weActivitySubjects.filter((s) => coverageMap[section.id]?.[s.id]);
+                            return (
+                              <td key={WE_VIRTUAL_ID} className="px-0.5 py-0.5">
+                                <button
+                                  onClick={() => openEditForCell(section, undefined, WE_VIRTUAL_ID)}
+                                  className="group h-full min-h-[40px] w-full rounded border border-transparent px-1.5 py-1 text-left transition hover:border-rose-200 hover:bg-rose-50 dark:hover:border-rose-500/30 dark:hover:bg-rose-500/10"
+                                >
+                                  {assigned.length > 0 ? (
+                                    assigned.map((s) => {
+                                      const a = coverageMap[section.id][s.id];
+                                      return (
+                                        <div key={s.id} className="text-[10px] leading-tight text-slate-500 dark:text-slate-400">
+                                          <span className="font-semibold text-slate-700 dark:text-slate-200">{s.name.slice(0, 3)}:</span> {a.teacher.abbreviation}
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <span className="text-[10px] text-slate-300 dark:text-slate-600">Add</span>
+                                  )}
+                                </button>
+                              </td>
+                            );
+                          }
                           const assignment = sectionAssignments[subjectId];
                           return (
                             <td key={subjectId} className="px-0.5 py-0.5">
@@ -596,9 +645,9 @@ export default function AssignmentsPage() {
               </div>
             ) : null}
 
-            {isWESubject && weSubjects.length > 0 ? (
+            {isWESubject && weActivitySubjects.length > 0 ? (
               <div className="space-y-3">
-                {weSubjects.map((subj) => {
+                {weActivitySubjects.map((subj) => {
                   const activityTeachers = getEligibleTeachersForSectionSubject(teachers, subj, editGrade);
                   return (
                     <div key={subj.id}>
@@ -635,6 +684,10 @@ export default function AssignmentsPage() {
                   );
                 })}
               </div>
+            ) : isWESubject && weActivitySubjects.length === 0 ? (
+              <p className="text-xs text-amber-600 dark:text-amber-300">
+                Art, Music and Dance subjects not found in the database.
+              </p>
             ) : !isWESubject ? (
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
@@ -664,11 +717,7 @@ export default function AssignmentsPage() {
                   </p>
                 )}
               </div>
-            ) : (
-              <p className="text-xs text-amber-600 dark:text-amber-300">
-                Art, Music and Dance subjects not found in the database.
-              </p>
-            )}
+            ) : null}
           </div>
 
           <DialogFooter>

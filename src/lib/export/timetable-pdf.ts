@@ -243,7 +243,7 @@ export function buildPdfContentBlocks(grid: TimetableGrid): any[] {
     },
     buildLegend(),
     {
-      margin: [0, 14, 0, 0],
+      margin: [0, 40, 0, 0],
       columns: [
         {
           width: '50%',

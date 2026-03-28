@@ -40,7 +40,7 @@ export function teacherCanCoverSubject(
   // across all grades — skip the teachableGrades restriction for these subjects.
   const isActivitySpecialist =
     subject.category === 'Activity' ||
-    ['art', 'music', 'dance', 'work experience'].includes(subjectName);
+    ['art', 'music', 'dance', 'vocal', 'keyboard', 'instrument', 'tabla', 'work experience'].includes(subjectName);
 
   if (!isActivitySpecialist) {
     const grades = parseTeachableGrades(teacher.teachableGrades);
@@ -57,9 +57,13 @@ export function teacherCanCoverSubject(
   if (subjectName === 'music') return dept === 'music' || dept === 'work experience';
   if (subjectName === 'dance') return dept === 'dance' || dept === 'work experience';
   if (subjectName === 'art') return dept === 'art' || dept === 'work experience';
+  if (subjectName === 'vocal') return dept === 'vocal' || dept === 'work experience';
+  if (subjectName === 'keyboard') return dept === 'keyboard' || dept === 'work experience';
+  if (subjectName === 'instrument') return dept === 'instrument' || dept === 'work experience';
+  if (subjectName === 'tabla') return dept === 'tabla' || dept === 'work experience';
 
   if (subjectName === 'work experience') {
-    return ['art', 'dance', 'music'].includes(dept) || dept === 'work experience';
+    return ['art', 'dance', 'music', 'vocal', 'keyboard', 'instrument', 'tabla'].includes(dept) || dept === 'work experience';
   }
 
   if (subject.category === 'Activity') {

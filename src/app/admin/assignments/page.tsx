@@ -135,8 +135,8 @@ export default function AssignmentsPage() {
   const LANG2ND_VIRTUAL_ID = '__LANG2ND__';
   const LANG3RD_VIRTUAL_ID = '__LANG3RD__';
 
-  // W.E. activities
-  const WE_ACTIVITY_NAMES = ['Art', 'Music', 'Dance'] as const;
+  // W.E. activities (Vocal, Keyboard, Instrument, Tabla, Dance)
+  const WE_ACTIVITY_NAMES = ['Vocal', 'Keyboard', 'Instrument', 'Tabla', 'Dance'] as const;
   const weActivitySubjects = WE_ACTIVITY_NAMES
     .map((n) => subjects.find((s) => s.name.toLowerCase() === n.toLowerCase()))
     .filter((s): s is Subject => s !== undefined);

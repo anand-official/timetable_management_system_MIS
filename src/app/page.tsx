@@ -207,7 +207,7 @@ interface LabRepairChange {
   teacherId: string | null;
 }
 
-const WE_SUBJECT_NAMES = new Set(['Art', 'Dance', 'Music', 'Work Experience']);
+const WE_SUBJECT_NAMES = new Set(['Vocal', 'Keyboard', 'Instrument', 'Tabla', 'Dance', 'Art', 'Music', 'Work Experience']);
 const LANGUAGE_BUCKET_SUBJECT_NAMES = new Set(['Hindi', 'Nepali', 'French']);
 
 export default function TimetableManagementSystem() {
@@ -1037,7 +1037,7 @@ export default function TimetableManagementSystem() {
     LANGUAGE_BUCKET_SUBJECT_NAMES.has(secondaryEditingSubject!.name);
 
   // W.E. slot editing
-  const WE_ACTIVITY_LABELS = ['Art', 'Music', 'Dance'] as const;
+  const WE_ACTIVITY_LABELS = ['Vocal', 'Keyboard', 'Instrument', 'Tabla', 'Dance'] as const;
   const weSlotActivitySubjects = WE_ACTIVITY_LABELS
     .map((n) => subjects.find((s) => s.name.toLowerCase() === n.toLowerCase()))
     .filter((s): s is typeof subjects[0] => s !== undefined);
@@ -3021,7 +3021,7 @@ export default function TimetableManagementSystem() {
             {isEditingWESlot ? (
               <>
                 <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
-                  <span className="font-semibold">Work Experience</span> — assign Art, Music and Dance teachers
+                  <span className="font-semibold">Work Experience</span> — assign Vocal, Keyboard, Instrument, Tabla and Dance teachers
                 </div>
                 {weSlotActivitySubjects.map((subj) => {
                   const eligible = getEligibleTeachersForSectionSubject(teachers, subj, editingSection?.grade.name);

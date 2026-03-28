@@ -75,8 +75,8 @@ export function teacherCanCoverSubject(
   if (subjectName === 'geography' || subjectName === 'history' || subjectName === 'social studies') {
     return dept === 'social studies';
   }
-  if (subjectName === 'hindi') return dept === 'hindi';
-  if (subjectName === 'nepali') return dept === 'nepali';
+  if (subjectName === 'hindi' || subjectName === 'hindi 2l') return dept === 'hindi';
+  if (subjectName === 'nepali' || subjectName === 'nepali 2l') return dept === 'nepali';
   if (subjectName === 'french') return dept === 'french';
   if (subjectName === 'home science') return dept === 'home science';
   if (subjectName === 'informatics practices') return dept === 'computer science';

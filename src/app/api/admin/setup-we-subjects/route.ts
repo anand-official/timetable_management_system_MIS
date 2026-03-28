@@ -8,6 +8,11 @@ const WE_SUBJECTS = [
   { name: 'Tabla',      code: 'Tab',  category: 'Activity', requiresLab: false, isDoublePeriod: false },
 ];
 
+const LANG_SUBJECTS = [
+  { name: 'Hindi 2L',  code: 'Hi2', category: 'Language', requiresLab: false, isDoublePeriod: false },
+  { name: 'Nepali 2L', code: 'Ne2', category: 'Language', requiresLab: false, isDoublePeriod: false },
+];
+
 const DEPT_CHANGES: Record<string, string> = {
   'Ms. Sangeeta Pradhan Rana': 'Vocal',
   'Mr. Bruno Tamang':          'Keyboard',
@@ -20,8 +25,8 @@ const DEPT_CHANGES: Record<string, string> = {
 export async function POST() {
   const log: string[] = [];
 
-  // 1. Upsert subjects
-  for (const subj of WE_SUBJECTS) {
+  // 1. Upsert subjects (W.E. + 2nd Language)
+  for (const subj of [...WE_SUBJECTS, ...LANG_SUBJECTS]) {
     const existing = await db.subject.findFirst({ where: { name: subj.name } });
     if (existing) {
       log.push(`Subject "${subj.name}" already exists`);

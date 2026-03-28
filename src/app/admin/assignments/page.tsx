@@ -149,8 +149,8 @@ export default function AssignmentsPage() {
       .filter((id): id is string => id !== undefined)
   );
 
-  // 2nd Language (Hindi + Nepali, VI–VIII only)
-  const LANG2ND_NAMES = ['Hindi', 'Nepali'] as const;
+  // 2nd Language (Hindi 2L + Nepali 2L — separate subjects from 3rd lang, VI–VIII only)
+  const LANG2ND_NAMES = ['Hindi 2L', 'Nepali 2L'] as const;
   const lang2ndSubjects = LANG2ND_NAMES
     .map((n) => subjects.find((s) => s.name.toLowerCase() === n.toLowerCase()))
     .filter((s): s is Subject => s !== undefined);
@@ -160,7 +160,7 @@ export default function AssignmentsPage() {
   const lang3rdSubjects = LANG3RD_NAMES
     .map((n) => subjects.find((s) => s.name.toLowerCase() === n.toLowerCase()))
     .filter((s): s is Subject => s !== undefined);
-  const lang3rdIds = new Set(lang3rdSubjects.map((s) => s.id)); // superset of lang2ndIds
+  const lang3rdIds = new Set(lang3rdSubjects.map((s) => s.id));
 
   // Science vs Phy/Chem/Bio split
   const LOWER_GRADES = new Set(['VI', 'VII', 'VIII']);

@@ -33,11 +33,19 @@ export function teacherCanCoverSubject(
 ): boolean {
   if (teacher.isActive === false) return false;
 
-  const grades = parseTeachableGrades(teacher.teachableGrades);
-  if (grades.length > 0 && !grades.includes(grade)) return false;
-
   const dept = teacher.department.toLowerCase();
   const subjectName = subject.name.toLowerCase();
+
+  // Activity specialist subjects (Art, Music, Dance, W.E.) are taught by department specialists
+  // across all grades — skip the teachableGrades restriction for these subjects.
+  const isActivitySpecialist =
+    subject.category === 'Activity' ||
+    ['art', 'music', 'dance', 'work experience'].includes(subjectName);
+
+  if (!isActivitySpecialist) {
+    const grades = parseTeachableGrades(teacher.teachableGrades);
+    if (grades.length > 0 && !grades.includes(grade)) return false;
+  }
 
   if (isLabDepartment(teacher.department) || dept === 'counselling') return false;
   if (subjectName === 'games') return dept === 'sports';

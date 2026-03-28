@@ -39,6 +39,10 @@ const WEIGHTS = {
   NOT_HOD: 10,
 };
 
+export const GAMES_PERIOD_ID = '__GAMES__';
+export const GAMES_PERIOD_NAME = 'Games Period';
+export const GAMES_PERIOD_ABBREVIATION = 'GP';
+
 export interface ScoredCandidate {
   id: string;
   name: string;
@@ -347,8 +351,11 @@ export async function suggestSubstitutes(
       scored = fallback.map((c) => scoreCandidate(c, true)).sort((a, b) => b.score - a.score);
     }
 
+    // Remember whether any real teacher candidate was found (before adding assigned/games entries)
+    const hasRealCandidates = scored.length > 0;
+
     // Always include the currently-assigned substitute in the list so it shows in the dropdown
-    if (assignedId && !scored.some((s) => s.id === assignedId)) {
+    if (assignedId && assignedId !== GAMES_PERIOD_ID && !scored.some((s) => s.id === assignedId)) {
       const assignedTeacher = context.teachers.find((t) => t.id === assignedId);
       if (assignedTeacher) {
         scored.push({
@@ -359,6 +366,17 @@ export async function suggestSubstitutes(
           reasons: ['Currently assigned'],
         });
       }
+    }
+
+    // Last resort: no teacher is free at this period → offer Games Period
+    if (!hasRealCandidates && !scored.some((s) => s.id === GAMES_PERIOD_ID)) {
+      scored.push({
+        id: GAMES_PERIOD_ID,
+        name: GAMES_PERIOD_NAME,
+        abbreviation: GAMES_PERIOD_ABBREVIATION,
+        score: -1,
+        reasons: ['No teacher available — assign as Games Period'],
+      });
     }
 
     return {
@@ -427,22 +445,29 @@ export async function assignSubstituteToSlot(args: {
   const normalizedDate = normalizeDateOnly(args.date);
   const normalizedDateKey = dateKey(normalizedDate);
   const dayName = getDayName(normalizedDate);
+  const isGames = args.substituteTeacherId === GAMES_PERIOD_ID;
 
-  const [absentTeacher, substituteTeacher, day] = await Promise.all([
+  const [absentTeacher, substituteTeacherFromDb, day] = await Promise.all([
     db.teacher.findUnique({
       where: { id: args.absentTeacherId },
       select: { id: true, name: true, abbreviation: true, department: true },
     }),
-    db.teacher.findUnique({
-      where: { id: args.substituteTeacherId },
-      select: { id: true, name: true, abbreviation: true },
-    }),
+    isGames
+      ? Promise.resolve(null)
+      : db.teacher.findUnique({
+          where: { id: args.substituteTeacherId },
+          select: { id: true, name: true, abbreviation: true },
+        }),
     db.day.findUnique({ where: { name: dayName } }),
   ]);
 
-  if (!absentTeacher || !substituteTeacher || !day) {
+  if (!absentTeacher || (!isGames && !substituteTeacherFromDb) || !day) {
     throw new Error('Invalid substitute assignment request');
   }
+
+  const substituteTeacher = isGames
+    ? { id: GAMES_PERIOD_ID, name: GAMES_PERIOD_NAME, abbreviation: GAMES_PERIOD_ABBREVIATION }
+    : substituteTeacherFromDb!;
 
   const updated = await db.$transaction(async (tx) => {
     const currentSlot = await tx.timetableSlot.findUnique({
@@ -464,33 +489,35 @@ export async function assignSubstituteToSlot(args: {
 
     const slotContext = resolveSlotContext(currentSlot, absentTeacher);
 
-    // Fetch all slots for the day (needed for both period-conflict and daily-count checks)
-    const allSlotsToday = await tx.timetableSlot.findMany({
-      where: { dayId: currentSlot.dayId, notes: { not: null } },
-      select: { id: true, teacherId: true, labTeacherId: true, timeSlotId: true, notes: true },
-    });
+    if (!isGames) {
+      // Fetch all slots for the day (needed for both period-conflict and daily-count checks)
+      const allSlotsToday = await tx.timetableSlot.findMany({
+        where: { dayId: currentSlot.dayId, notes: { not: null } },
+        select: { id: true, teacherId: true, labTeacherId: true, timeSlotId: true, notes: true },
+      });
 
-    // Check same-period conflict
-    const samePeriodSlots = allSlotsToday.filter((s) => s.timeSlotId === currentSlot.timeSlotId);
-    const substituteBusy = samePeriodSlots.some((candidate) => {
-      if (candidate.id !== currentSlot.id && slotHasTeacherId(candidate, substituteTeacher.id)) return true;
-      return getSubstituteNoteEntriesForDate(candidate.notes, normalizedDateKey).some((entry) =>
-        entry.absentTeacherId !== absentTeacher.id && entry.substituteTeacherId === substituteTeacher.id
-      );
-    });
-    if (substituteBusy) {
-      throw new Error('Substitute teacher is already booked in this period');
-    }
+      // Check same-period conflict
+      const samePeriodSlots = allSlotsToday.filter((s) => s.timeSlotId === currentSlot.timeSlotId);
+      const substituteBusy = samePeriodSlots.some((candidate) => {
+        if (candidate.id !== currentSlot.id && slotHasTeacherId(candidate, substituteTeacher.id)) return true;
+        return getSubstituteNoteEntriesForDate(candidate.notes, normalizedDateKey).some((entry) =>
+          entry.absentTeacherId !== absentTeacher.id && entry.substituteTeacherId === substituteTeacher.id
+        );
+      });
+      if (substituteBusy) {
+        throw new Error('Substitute teacher is already booked in this period');
+      }
 
-    // Enforce max substitute periods per day
-    const existingSubCount = allSlotsToday.reduce((count, s) => {
-      return count + getSubstituteNoteEntriesForDate(s.notes, normalizedDateKey).filter(
-        (e) => e.substituteTeacherId === substituteTeacher.id &&
-          !(s.id === currentSlot.id && e.absentTeacherId === absentTeacher.id)
-      ).length;
-    }, 0);
-    if (existingSubCount >= MAX_SUBSTITUTE_PERIODS_PER_DAY) {
-      throw new Error(`Substitute teacher already has ${MAX_SUBSTITUTE_PERIODS_PER_DAY} substitute periods today`);
+      // Enforce max substitute periods per day
+      const existingSubCount = allSlotsToday.reduce((count, s) => {
+        return count + getSubstituteNoteEntriesForDate(s.notes, normalizedDateKey).filter(
+          (e) => e.substituteTeacherId === substituteTeacher.id &&
+            !(s.id === currentSlot.id && e.absentTeacherId === absentTeacher.id)
+        ).length;
+      }, 0);
+      if (existingSubCount >= MAX_SUBSTITUTE_PERIODS_PER_DAY) {
+        throw new Error(`Substitute teacher already has ${MAX_SUBSTITUTE_PERIODS_PER_DAY} substitute periods today`);
+      }
     }
 
     const nextNotes = upsertSubstituteNoteEntry(currentSlot.notes, {

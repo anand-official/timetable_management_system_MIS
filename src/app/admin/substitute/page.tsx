@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { GAMES_PERIOD_ID, GAMES_PERIOD_NAME } from '@/lib/substitute';
 import {
   ArrowLeft,
   CalendarDays,
@@ -99,7 +100,7 @@ export default function SubstitutePage() {
 
   const loadTeachers = async () => {
     try {
-      const response = await fetch('/api/timetable');
+      const response = await fetch('/api/timetable', { cache: 'no-store' });
       const data = await response.json();
       const nextTeachers: Teacher[] = data.teachers || [];
       setTeachers(nextTeachers);
@@ -114,7 +115,7 @@ export default function SubstitutePage() {
   const loadDayPlan = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/substitute/day?date=${selectedDate}`);
+      const response = await fetch(`/api/substitute/day?date=${selectedDate}`, { cache: 'no-store' });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`);
       setAbsences(data.absences || []);
@@ -442,12 +443,25 @@ export default function SubstitutePage() {
 
                                 {slot.assignedSubstitute ? (
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
-                                      Assigned
-                                    </Badge>
-                                    <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                                      {slot.assignedSubstitute.name} ({slot.assignedSubstitute.abbreviation})
-                                    </span>
+                                    {slot.assignedSubstitute.id === GAMES_PERIOD_ID ? (
+                                      <>
+                                        <Badge className="border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/15 dark:text-orange-300">
+                                          Games Period
+                                        </Badge>
+                                        <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                                          {GAMES_PERIOD_NAME} — No teacher available
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
+                                          Assigned
+                                        </Badge>
+                                        <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                                          {slot.assignedSubstitute.name} ({slot.assignedSubstitute.abbreviation})
+                                        </span>
+                                      </>
+                                    )}
                                   </div>
                                 ) : slot.topPick ? (
                                   <div className="flex flex-wrap items-center gap-2">
@@ -488,7 +502,9 @@ export default function SubstitutePage() {
                                   <SelectContent>
                                     {slot.suggestions.map((candidate, index) => (
                                       <SelectItem key={candidate.id} value={candidate.id}>
-                                        {candidate.name} ({candidate.abbreviation}){index === 0 ? ' • Best' : ''}
+                                        {candidate.id === GAMES_PERIOD_ID
+                                          ? '🎮 Games Period — No teacher free'
+                                          : `${candidate.name} (${candidate.abbreviation})${index === 0 ? ' • Best' : ''}`}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>

@@ -128,6 +128,10 @@ export default function AssignmentsPage() {
   const [editPeriodsPerWeek, setEditPeriodsPerWeek] = useState('1');
   const [newTeacherId, setNewTeacherId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [weActivity, setWeActivity] = useState<'Art' | 'Music' | 'Dance' | null>(null);
+
+  const isWESubject = /\bw\.?e\.?\b/i.test(editSubjectName) || editSubjectName.toLowerCase().includes('work experience');
+  const WE_ACTIVITIES = ['Art', 'Music', 'Dance'] as const;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -172,6 +176,12 @@ export default function AssignmentsPage() {
   const editSubject = subjects.find((subject) => subject.id === editSubjectId);
   const editEligibleTeachers = getEligibleTeachersForSectionSubject(teachers, editSubject, editGrade);
 
+  // For W.E. subject, filter to only teachers whose department matches the selected activity
+  const weFilteredTeachers = isWESubject && weActivity
+    ? teachers.filter((t) => t.department.toLowerCase().includes(weActivity.toLowerCase()))
+    : editEligibleTeachers;
+  const dialogTeachers = isWESubject ? weFilteredTeachers : editEligibleTeachers;
+
   useEffect(() => {
     if (!editOpen || !newTeacherId) return;
     if (editEligibleTeachers.some((teacher) => teacher.id === newTeacherId)) return;
@@ -188,6 +198,7 @@ export default function AssignmentsPage() {
     setEditSubjectName(subjName ?? assignment?.subject.name ?? '');
     setEditPeriodsPerWeek(String(resolvedPeriods));
     setNewTeacherId(assignment?.teacherId ?? '');
+    setWeActivity(null);
     setEditOpen(true);
   };
 
@@ -529,16 +540,44 @@ export default function AssignmentsPage() {
               </div>
             ) : null}
 
+            {isWESubject && (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Select activity:
+                </label>
+                <div className="flex gap-2">
+                  {WE_ACTIVITIES.map((activity) => (
+                    <button
+                      key={activity}
+                      type="button"
+                      onClick={() => { setWeActivity(activity); setNewTeacherId(''); }}
+                      className={`flex-1 rounded-lg border py-1.5 text-xs font-semibold transition-all ${
+                        weActivity === activity
+                          ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-500/60 dark:bg-indigo-500/15 dark:text-indigo-300'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                      }`}
+                    >
+                      {activity}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
                 {editAssignment ? 'Replace with:' : 'Assign teacher:'}
               </label>
-              <Select value={newTeacherId} onValueChange={setNewTeacherId} disabled={!editSubjectId}>
+              <Select
+                value={newTeacherId}
+                onValueChange={setNewTeacherId}
+                disabled={!editSubjectId || (isWESubject && !weActivity)}
+              >
                 <SelectTrigger className="text-sm">
-                  <SelectValue placeholder="Select teacher..." />
+                  <SelectValue placeholder={isWESubject && !weActivity ? 'Select an activity first...' : 'Select teacher...'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {editEligibleTeachers.map((teacher) => {
+                  {dialogTeachers.map((teacher) => {
                     const pct = teacher.targetWorkload > 0
                       ? Math.round((teacher.assignedPeriods / teacher.targetWorkload) * 100)
                       : 0;
@@ -552,9 +591,14 @@ export default function AssignmentsPage() {
                 </SelectContent>
               </Select>
 
-              {editSubjectId && editEligibleTeachers.length === 0 ? (
+              {editSubjectId && !isWESubject && editEligibleTeachers.length === 0 ? (
                 <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-300">
                   No eligible teachers found for this section and subject.
+                </p>
+              ) : null}
+              {isWESubject && weActivity && dialogTeachers.length === 0 ? (
+                <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-300">
+                  No {weActivity} teachers found.
                 </p>
               ) : null}
             </div>

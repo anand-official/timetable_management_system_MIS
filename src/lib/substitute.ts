@@ -43,6 +43,10 @@ export const GAMES_PERIOD_ID = '__GAMES__';
 export const GAMES_PERIOD_NAME = 'Games Period';
 export const GAMES_PERIOD_ABBREVIATION = 'GP';
 
+export function isGamesId(id: string): boolean {
+  return id === GAMES_PERIOD_ID;
+}
+
 export interface ScoredCandidate {
   id: string;
   name: string;
@@ -369,7 +373,7 @@ export async function suggestSubstitutes(
     }
 
     // Last resort: no teacher is free at this period → offer Games Period
-    if (!hasRealCandidates && !scored.some((s) => s.id === GAMES_PERIOD_ID)) {
+    if (!hasRealCandidates && !scored.some((s) => isGamesId(s.id))) {
       scored.push({
         id: GAMES_PERIOD_ID,
         name: GAMES_PERIOD_NAME,
@@ -445,7 +449,7 @@ export async function assignSubstituteToSlot(args: {
   const normalizedDate = normalizeDateOnly(args.date);
   const normalizedDateKey = dateKey(normalizedDate);
   const dayName = getDayName(normalizedDate);
-  const isGames = args.substituteTeacherId === GAMES_PERIOD_ID;
+  const isGames = isGamesId(args.substituteTeacherId);
 
   const [absentTeacher, substituteTeacherFromDb, day] = await Promise.all([
     db.teacher.findUnique({

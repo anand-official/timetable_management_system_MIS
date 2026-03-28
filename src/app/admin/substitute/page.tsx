@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { GAMES_PERIOD_ID, GAMES_PERIOD_NAME } from '@/lib/substitute';
+import { GAMES_PERIOD_ID, GAMES_PERIOD_NAME, isGamesId } from '@/lib/substitute';
 import {
   ArrowLeft,
   CalendarDays,

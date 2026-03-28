@@ -6,8 +6,21 @@
  * the route bundle while `serverExternalPackages` keeps it on the Node side.
  */
 
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import * as pdfMakeImport from 'pdfmake';
 import { TimetableGrid, CellData, cellColor } from './timetable-grid';
+
+let logoDataUrlPromise: Promise<string | null> | null = null;
+
+async function loadSchoolLogoDataUrl(): Promise<string | null> {
+  if (!logoDataUrlPromise) {
+    logoDataUrlPromise = readFile(path.join(process.cwd(), 'public', 'logo.png'))
+      .then((buffer) => `data:image/png;base64,${buffer.toString('base64')}`)
+      .catch(() => null);
+  }
+  return logoDataUrlPromise;
+}
 
 /** pdfmake rowSpan + omitted columns is fragile; duplicate lab 2nd period as a normal cell. */
 function flattenGridCellsForPdf(cells: (CellData | null)[][]): (CellData | null)[][] {
@@ -196,26 +209,41 @@ function buildLegend(): any {
 }
 
 /** One timetable table + legend + footer (for single or multi-page PDF). */
-export function buildPdfContentBlocks(grid: TimetableGrid): any[] {
+export function buildPdfContentBlocks(grid: TimetableGrid, logoDataUrl: string | null): any[] {
   const nDays = grid.days.length;
   const colWidths: (string | number)[] = [52, ...Array(nDays).fill('*')];
   const tableBody = buildTableBody(grid);
 
   return [
+    // ── Header: logo | school name + timetable title | subtitle ──
     {
-      stack: [
-        { text: grid.title, style: 'title' },
+      columns: [
+        logoDataUrl
+          ? { width: 70, stack: [{ image: logoDataUrl, width: 54, margin: [0, 2, 0, 0] }] }
+          : { text: '', width: 70 },
         {
-          canvas: [
-            { type: 'line', x1: 0, y1: 3, x2: 780, y2: 3, lineWidth: 1.25, lineColor: '#1E3A5F' },
+          width: '*',
+          stack: [
+            { text: 'Modern Indian School', fontSize: 18, bold: true, color: '#0F172A', alignment: 'center' },
+            { text: grid.title, fontSize: 11, bold: true, color: '#1E3A5F', alignment: 'center', margin: [0, 4, 0, 0] },
           ],
-          margin: [0, 0, 0, 2],
+        },
+        {
+          width: 70,
+          stack: [
+            { text: grid.subtitle, fontSize: 7.5, color: LABEL_TEXT, alignment: 'right', margin: [0, 4, 0, 0] },
+          ],
         },
       ],
-      margin: [0, 0, 0, 2],
+      columnGap: 8,
+      margin: [0, 0, 0, 8],
     },
-    { text: grid.subtitle, style: 'subtitle' },
-    { text: ' ', margin: [0, 6] },
+    {
+      canvas: [
+        { type: 'line', x1: 0, y1: 0, x2: 780, y2: 0, lineWidth: 1, lineColor: '#CBD5E1' },
+      ],
+      margin: [0, 0, 0, 10],
+    },
     {
       table: {
         headerRows: 1,
@@ -243,35 +271,11 @@ export function buildPdfContentBlocks(grid: TimetableGrid): any[] {
     },
     buildLegend(),
     {
-      margin: [0, 40, 0, 0],
-      columns: [
-        {
-          width: 200,
-          alignment: 'center',
-          stack: [
-            { text: '______________________________', fontSize: 9, color: '#0F172A' },
-            { text: 'Principal', fontSize: 8.5, bold: true, color: '#334155', margin: [0, 3, 0, 0] },
-            { text: 'Retd. Col. Raju Peter', fontSize: 8, color: '#475569' },
-          ],
-        },
-        { width: '*', text: '' },
-        {
-          width: 200,
-          alignment: 'center',
-          stack: [
-            { text: '______________________________', fontSize: 9, color: '#0F172A' },
-            { text: 'Time Table Incharge', fontSize: 8.5, bold: true, color: '#334155', margin: [0, 3, 0, 0] },
-            { text: 'A.K. Jha', fontSize: 8, color: '#475569' },
-          ],
-        },
-      ],
-    },
-    {
       text:      `Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
       fontSize:  7,
       color:     LABEL_TEXT,
       alignment: 'right',
-      margin:    [0, 6, 0, 0],
+      margin:    [0, 8, 0, 0],
     },
   ];
 }
@@ -297,7 +301,8 @@ async function createPdfBuffer(content: any[]): Promise<Buffer> {
 }
 
 export async function generateTimetablePdf(grid: TimetableGrid): Promise<Buffer> {
-  return createPdfBuffer(buildPdfContentBlocks(grid));
+  const logoDataUrl = await loadSchoolLogoDataUrl();
+  return createPdfBuffer(buildPdfContentBlocks(grid, logoDataUrl));
 }
 
 /** One landscape page per timetable (full school export). */
@@ -308,10 +313,11 @@ export async function generateBulkTimetablePdf(grids: TimetableGrid[]): Promise<
     ]);
   }
 
+  const logoDataUrl = await loadSchoolLogoDataUrl();
   const content: any[] = [];
   for (let i = 0; i < grids.length; i++) {
     if (i > 0) content.push({ text: '', pageBreak: 'before' });
-    content.push(...buildPdfContentBlocks(grids[i]));
+    content.push(...buildPdfContentBlocks(grids[i], logoDataUrl));
   }
 
   return createPdfBuffer(content);

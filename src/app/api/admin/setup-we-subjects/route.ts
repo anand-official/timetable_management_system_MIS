@@ -101,7 +101,19 @@ export async function POST() {
   const fl3 = await db.teacherSubject.updateMany({ where: { subjectId: { in: lang3rdSubs.map(s=>s.id) } }, data: { periodsPerWeek: 4 } });
   log.push(`Lang periods: ${fl2.count} × 2nd Lang → 6/week, ${fl3.count} × 3rd Lang → 4/week`);
 
-  // 5. Fix Ms. Deepa Devi Subedi abbreviation DS2 → DS
+  // 5. Fix Innovation periods → 1/week
+  const innovationSubject = await db.subject.findFirst({ where: { name: 'Innovation' } });
+  if (innovationSubject) {
+    const fixInnovation = await db.teacherSubject.updateMany({
+      where: { subjectId: innovationSubject.id, periodsPerWeek: { not: 1 } },
+      data: { periodsPerWeek: 1 },
+    });
+    log.push(`Fixed Innovation periods: ${fixInnovation.count} → 1/week`);
+  } else {
+    log.push('Innovation subject not found — skipped');
+  }
+
+  // 6. Fix Ms. Deepa Devi Subedi abbreviation DS2 → DS
   const dds = await db.teacher.findFirst({ where: { name: 'Ms. Deepa Devi Subedi' } });
   if (dds && dds.abbreviation !== 'DS') {
     const conflict = await db.teacher.findFirst({ where: { abbreviation: 'DS' } });

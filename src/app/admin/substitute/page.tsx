@@ -503,7 +503,7 @@ export default function SubstitutePage() {
                                     {slot.suggestions.map((candidate, index) => (
                                       <SelectItem key={candidate.id} value={candidate.id}>
                                         {candidate.id === GAMES_PERIOD_ID
-                                          ? '🎮 Games Period — No teacher free'
+                                          ? 'Games Period — No teacher free'
                                           : `${candidate.name} (${candidate.abbreviation})${index === 0 ? ' • Best' : ''}`}
                                       </SelectItem>
                                     ))}

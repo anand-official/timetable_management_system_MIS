@@ -128,10 +128,16 @@ export default function AssignmentsPage() {
   const [editPeriodsPerWeek, setEditPeriodsPerWeek] = useState('1');
   const [newTeacherId, setNewTeacherId] = useState('');
   const [saving, setSaving] = useState(false);
-  const [weActivity, setWeActivity] = useState<'Art' | 'Music' | 'Dance' | null>(null);
+  const [weTeacherIds, setWeTeacherIds] = useState<Record<string, string>>({});
 
+  const WE_ACTIVITY_NAMES = ['Art', 'Music', 'Dance'] as const;
   const isWESubject = /\bw\.?e\.?\b/i.test(editSubjectName) || editSubjectName.toLowerCase().includes('work experience');
-  const WE_ACTIVITIES = ['Art', 'Music', 'Dance'] as const;
+  // Find Art / Music / Dance subjects from the full subjects list
+  const weSubjects = isWESubject
+    ? WE_ACTIVITY_NAMES
+        .map((name) => subjects.find((s) => s.name.toLowerCase() === name.toLowerCase()))
+        .filter((s): s is Subject => s !== undefined)
+    : [];
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -176,12 +182,6 @@ export default function AssignmentsPage() {
   const editSubject = subjects.find((subject) => subject.id === editSubjectId);
   const editEligibleTeachers = getEligibleTeachersForSectionSubject(teachers, editSubject, editGrade);
 
-  // For W.E. subject, filter to only teachers whose department matches the selected activity
-  const weFilteredTeachers = isWESubject && weActivity
-    ? teachers.filter((t) => t.department.toLowerCase().includes(weActivity.toLowerCase()))
-    : editEligibleTeachers;
-  const dialogTeachers = isWESubject ? weFilteredTeachers : editEligibleTeachers;
-
   useEffect(() => {
     if (!editOpen || !newTeacherId) return;
     if (editEligibleTeachers.some((teacher) => teacher.id === newTeacherId)) return;
@@ -198,11 +198,67 @@ export default function AssignmentsPage() {
     setEditSubjectName(subjName ?? assignment?.subject.name ?? '');
     setEditPeriodsPerWeek(String(resolvedPeriods));
     setNewTeacherId(assignment?.teacherId ?? '');
-    setWeActivity(null);
+    // Pre-populate existing W.E. activity teacher assignments
+    const initWeTeachers: Record<string, string> = {};
+    for (const name of WE_ACTIVITY_NAMES) {
+      const subj = subjects.find((s) => s.name.toLowerCase() === name.toLowerCase());
+      if (subj) {
+        const existing = coverageMap[section.id]?.[subj.id];
+        if (existing) initWeTeachers[subj.id] = existing.teacherId;
+      }
+    }
+    setWeTeacherIds(initWeTeachers);
     setEditOpen(true);
   };
 
   const handleSave = async () => {
+    // W.E. subject: save Art / Music / Dance assignments separately
+    if (isWESubject && weSubjects.length > 0) {
+      const sectionId = editSection?.id ?? editAssignment?.section.id ?? '';
+      if (!sectionId) { toast.error('Section is missing'); return; }
+      const periodsPerWeek = Number(editPeriodsPerWeek);
+      if (!Number.isFinite(periodsPerWeek) || periodsPerWeek <= 0) {
+        toast.error('Enter a valid periods/week value');
+        return;
+      }
+      setSaving(true);
+      try {
+        let saved = 0;
+        for (const subj of weSubjects) {
+          const teacherId = weTeacherIds[subj.id];
+          if (!teacherId) continue;
+          const existing = coverageMap[sectionId]?.[subj.id];
+          if (existing) {
+            const res = await fetch('/api/assignments', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ assignmentId: existing.id, newTeacherId: teacherId }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `Failed to update ${subj.name} assignment`);
+          } else {
+            const res = await fetch('/api/assignments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ teacherId, subjectId: subj.id, sectionId, periodsPerWeek }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `Failed to create ${subj.name} assignment`);
+          }
+          saved++;
+        }
+        if (saved === 0) { toast.error('Select at least one activity teacher'); return; }
+        toast.success(`W.E. assigned — ${saved} activit${saved === 1 ? 'y' : 'ies'} saved`);
+        setEditOpen(false);
+        await load();
+      } catch (error) {
+        toast.error((error as Error).message || 'Failed to save W.E. assignments');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     if (!newTeacherId) {
       toast.error('Select a teacher');
       return;
@@ -540,75 +596,90 @@ export default function AssignmentsPage() {
               </div>
             ) : null}
 
-            {isWESubject && (
+            {isWESubject && weSubjects.length > 0 ? (
+              <div className="space-y-3">
+                {weSubjects.map((subj) => {
+                  const activityTeachers = getEligibleTeachersForSectionSubject(teachers, subj, editGrade);
+                  return (
+                    <div key={subj.id}>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        {subj.name} Teacher
+                      </label>
+                      <Select
+                        value={weTeacherIds[subj.id] ?? ''}
+                        onValueChange={(v) => setWeTeacherIds((prev) => ({ ...prev, [subj.id]: v }))}
+                      >
+                        <SelectTrigger className="text-sm">
+                          <SelectValue placeholder={`Select ${subj.name} teacher...`} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {activityTeachers.map((teacher) => {
+                            const pct = teacher.targetWorkload > 0
+                              ? Math.round((teacher.assignedPeriods / teacher.targetWorkload) * 100)
+                              : 0;
+                            return (
+                              <SelectItem key={teacher.id} value={teacher.id}>
+                                {teacher.abbreviation} - {teacher.name} ({teacher.assignedPeriods}/{teacher.targetWorkload})
+                                {pct > 100 ? ' overloaded' : pct > 80 ? ' busy' : ''}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      {activityTeachers.length === 0 && (
+                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">
+                          No eligible {subj.name} teachers found.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : !isWESubject ? (
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
-                  Select activity:
+                  {editAssignment ? 'Replace with:' : 'Assign teacher:'}
                 </label>
-                <div className="flex gap-2">
-                  {WE_ACTIVITIES.map((activity) => (
-                    <button
-                      key={activity}
-                      type="button"
-                      onClick={() => { setWeActivity(activity); setNewTeacherId(''); }}
-                      className={`flex-1 rounded-lg border py-1.5 text-xs font-semibold transition-all ${
-                        weActivity === activity
-                          ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-500/60 dark:bg-indigo-500/15 dark:text-indigo-300'
-                          : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                      }`}
-                    >
-                      {activity}
-                    </button>
-                  ))}
-                </div>
+                <Select value={newTeacherId} onValueChange={setNewTeacherId} disabled={!editSubjectId}>
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder="Select teacher..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editEligibleTeachers.map((teacher) => {
+                      const pct = teacher.targetWorkload > 0
+                        ? Math.round((teacher.assignedPeriods / teacher.targetWorkload) * 100)
+                        : 0;
+                      return (
+                        <SelectItem key={teacher.id} value={teacher.id}>
+                          {teacher.abbreviation} - {teacher.name} ({teacher.assignedPeriods}/{teacher.targetWorkload})
+                          {pct > 100 ? ' overloaded' : pct > 80 ? ' busy' : ''}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                {editSubjectId && editEligibleTeachers.length === 0 && (
+                  <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-300">
+                    No eligible teachers found for this section and subject.
+                  </p>
+                )}
               </div>
+            ) : (
+              <p className="text-xs text-amber-600 dark:text-amber-300">
+                Art, Music and Dance subjects not found in the database.
+              </p>
             )}
-
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
-                {editAssignment ? 'Replace with:' : 'Assign teacher:'}
-              </label>
-              <Select
-                value={newTeacherId}
-                onValueChange={setNewTeacherId}
-                disabled={!editSubjectId || (isWESubject && !weActivity)}
-              >
-                <SelectTrigger className="text-sm">
-                  <SelectValue placeholder={isWESubject && !weActivity ? 'Select an activity first...' : 'Select teacher...'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {dialogTeachers.map((teacher) => {
-                    const pct = teacher.targetWorkload > 0
-                      ? Math.round((teacher.assignedPeriods / teacher.targetWorkload) * 100)
-                      : 0;
-                    return (
-                      <SelectItem key={teacher.id} value={teacher.id}>
-                        {teacher.abbreviation} - {teacher.name} ({teacher.assignedPeriods}/{teacher.targetWorkload})
-                        {pct > 100 ? ' overloaded' : pct > 80 ? ' busy' : ''}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-
-              {editSubjectId && !isWESubject && editEligibleTeachers.length === 0 ? (
-                <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-300">
-                  No eligible teachers found for this section and subject.
-                </p>
-              ) : null}
-              {isWESubject && weActivity && dialogTeachers.length === 0 ? (
-                <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-300">
-                  No {weActivity} teachers found.
-                </p>
-              ) : null}
-            </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setEditOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={() => void handleSave()} disabled={saving || !newTeacherId}>
+            <Button
+              size="sm"
+              onClick={() => void handleSave()}
+              disabled={saving || (isWESubject ? Object.keys(weTeacherIds).length === 0 : !newTeacherId)}
+            >
               {saving ? 'Saving...' : editAssignment ? 'Update' : 'Assign'}
             </Button>
           </DialogFooter>

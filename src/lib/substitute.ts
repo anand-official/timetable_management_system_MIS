@@ -174,6 +174,7 @@ async function getSubstituteEngineContext(dateInput: string | Date) {
   const unavailableSet = new Set(unavailabilityToday.map((item) => `${item.teacherId}|${item.timeSlotId}`));
   const liveTeacherWorkload = buildTeacherSlotCountMap(scheduledSlots);
   const teacherBusy = new Set<string>();
+  const substituteDayCount = new Map<string, number>();
 
   for (const slot of scheduledSlots) {
     for (const teacherId of getAllSlotTeacherIds(slot)) {
@@ -181,6 +182,10 @@ async function getSubstituteEngineContext(dateInput: string | Date) {
     }
     for (const substituteEntry of getSubstituteNoteEntriesForDate(slot.notes, key)) {
       teacherBusy.add(`${substituteEntry.substituteTeacherId}|${slot.timeSlotId}`);
+      substituteDayCount.set(
+        substituteEntry.substituteTeacherId,
+        (substituteDayCount.get(substituteEntry.substituteTeacherId) ?? 0) + 1
+      );
     }
   }
 
@@ -195,12 +200,19 @@ async function getSubstituteEngineContext(dateInput: string | Date) {
     unavailableSet,
     teacherBusy,
     liveTeacherWorkload,
+    substituteDayCount,
     teachers,
   };
 }
 
-export async function suggestSubstitutes(teacherId: string, dateInput: string | Date) {
-  const context = await getSubstituteEngineContext(dateInput);
+export const MAX_SUBSTITUTE_PERIODS_PER_DAY = 2;
+
+export async function suggestSubstitutes(
+  teacherId: string,
+  dateInput: string | Date,
+  prebuiltContext?: Awaited<ReturnType<typeof getSubstituteEngineContext>>
+) {
+  const context = prebuiltContext ?? await getSubstituteEngineContext(dateInput);
   const absentTeacher = context.absencesToday.find((absence) => absence.teacherId === teacherId)?.teacher
     ?? await db.teacher.findUnique({
       where: { id: teacherId },
@@ -266,6 +278,9 @@ export async function suggestSubstitutes(teacherId: string, dateInput: string | 
       if (context.absentToday.has(candidate.id)) return false;
       if (assignedEntry?.substituteTeacherId !== candidate.id && context.teacherBusy.has(`${candidate.id}|${slot.timeSlotId}`)) return false;
       if (context.unavailableSet.has(`${candidate.id}|${slot.timeSlotId}`)) return false;
+      // Exclude teachers already at the daily substitute limit (unless they are the current assignee being shown)
+      const currentSubCount = context.substituteDayCount.get(candidate.id) ?? 0;
+      if (assignedEntry?.substituteTeacherId !== candidate.id && currentSubCount >= MAX_SUBSTITUTE_PERIODS_PER_DAY) return false;
       return true;
     });
 
@@ -356,7 +371,7 @@ export async function getDailySubstitutePlan(dateInput: string | Date) {
   const context = await getSubstituteEngineContext(dateInput);
   const absences = await Promise.all(
     context.absencesToday.map(async (absence) => {
-      const suggestionResult = await suggestSubstitutes(absence.teacherId, context.date);
+      const suggestionResult = await suggestSubstitutes(absence.teacherId, context.date, context);
       return {
         absenceId: absence.id,
         reason: absence.reason,
@@ -438,20 +453,15 @@ export async function assignSubstituteToSlot(args: {
       throw new Error('Substitute teacher does not teach this subject');
     }
 
-    const busyCandidates = await tx.timetableSlot.findMany({
-      where: {
-        dayId: currentSlot.dayId,
-        timeSlotId: currentSlot.timeSlotId,
-      },
-      select: {
-        id: true,
-        teacherId: true,
-        labTeacherId: true,
-        notes: true,
-      },
+    // Fetch all slots for the day (needed for both period-conflict and daily-count checks)
+    const allSlotsToday = await tx.timetableSlot.findMany({
+      where: { dayId: currentSlot.dayId, notes: { not: null } },
+      select: { id: true, teacherId: true, labTeacherId: true, timeSlotId: true, notes: true },
     });
 
-    const substituteBusy = busyCandidates.some((candidate) => {
+    // Check same-period conflict
+    const samePeriodSlots = allSlotsToday.filter((s) => s.timeSlotId === currentSlot.timeSlotId);
+    const substituteBusy = samePeriodSlots.some((candidate) => {
       if (candidate.id !== currentSlot.id && slotHasTeacherId(candidate, substituteTeacher.id)) return true;
       return getSubstituteNoteEntriesForDate(candidate.notes, normalizedDateKey).some((entry) =>
         entry.absentTeacherId !== absentTeacher.id && entry.substituteTeacherId === substituteTeacher.id
@@ -459,6 +469,17 @@ export async function assignSubstituteToSlot(args: {
     });
     if (substituteBusy) {
       throw new Error('Substitute teacher is already booked in this period');
+    }
+
+    // Enforce max substitute periods per day
+    const existingSubCount = allSlotsToday.reduce((count, s) => {
+      return count + getSubstituteNoteEntriesForDate(s.notes, normalizedDateKey).filter(
+        (e) => e.substituteTeacherId === substituteTeacher.id &&
+          !(s.id === currentSlot.id && e.absentTeacherId === absentTeacher.id)
+      ).length;
+    }, 0);
+    if (existingSubCount >= MAX_SUBSTITUTE_PERIODS_PER_DAY) {
+      throw new Error(`Substitute teacher already has ${MAX_SUBSTITUTE_PERIODS_PER_DAY} substitute periods today`);
     }
 
     const nextNotes = upsertSubstituteNoteEntry(currentSlot.notes, {
@@ -520,9 +541,11 @@ export async function autoAssignSubstitutes(teacherId: string, dateInput: string
     error: string | null;
   }> = [];
   const inMemoryBusy = new Set<string>();
+  const inMemorySubDayCount = new Map<string, number>();
 
   for (const slot of slots) {
     if (slot.assignedSubstitute) {
+      const subId = slot.assignedSubstitute.id;
       results.push({
         slotId: slot.slotId,
         periodNumber: slot.periodNumber,
@@ -537,7 +560,8 @@ export async function autoAssignSubstitutes(teacherId: string, dateInput: string
         },
         error: null,
       });
-      inMemoryBusy.add(`${slot.assignedSubstitute.id}|${slot.timeSlotId}`);
+      inMemoryBusy.add(`${subId}|${slot.timeSlotId}`);
+      inMemorySubDayCount.set(subId, (inMemorySubDayCount.get(subId) ?? 0) + 1);
       continue;
     }
 
@@ -546,6 +570,7 @@ export async function autoAssignSubstitutes(teacherId: string, dateInput: string
 
     for (const candidate of slot.suggestions) {
       if (inMemoryBusy.has(`${candidate.id}|${slot.timeSlotId}`)) continue;
+      if ((inMemorySubDayCount.get(candidate.id) ?? 0) >= MAX_SUBSTITUTE_PERIODS_PER_DAY) continue;
       try {
         await assignSubstituteToSlot({
           slotId: slot.slotId,
@@ -555,12 +580,13 @@ export async function autoAssignSubstitutes(teacherId: string, dateInput: string
           mode: 'auto',
         });
         inMemoryBusy.add(`${candidate.id}|${slot.timeSlotId}`);
+        inMemorySubDayCount.set(candidate.id, (inMemorySubDayCount.get(candidate.id) ?? 0) + 1);
         assigned = candidate;
         error = '';
         break;
       } catch (err) {
         error = (err as Error)?.message || 'Database error during assignment';
-        if (error.includes('already booked')) continue;
+        if (error.includes('already booked') || error.includes('substitute periods today')) continue;
       }
     }
 
@@ -580,6 +606,7 @@ export async function autoAssignSubstitutes(teacherId: string, dateInput: string
 export async function autoAssignDailySubstitutes(dateInput: string | Date, teacherIds?: string[]) {
   const plan = await getDailySubstitutePlan(dateInput);
   const inMemoryBusy = new Set<string>();
+  const inMemorySubDayCount = new Map<string, number>();
   const results: Array<{
     absentTeacherId: string;
     slotId: string;
@@ -605,7 +632,9 @@ export async function autoAssignDailySubstitutes(dateInput: string | Date, teach
 
   for (const item of flattened) {
     if (item.slot.assignedSubstitute) {
-      inMemoryBusy.add(`${item.slot.assignedSubstitute.id}|${item.slot.timeSlotId}`);
+      const subId = item.slot.assignedSubstitute.id;
+      inMemoryBusy.add(`${subId}|${item.slot.timeSlotId}`);
+      inMemorySubDayCount.set(subId, (inMemorySubDayCount.get(subId) ?? 0) + 1);
       results.push({
         absentTeacherId: item.absence.teacher.id,
         slotId: item.slot.slotId,
@@ -629,6 +658,7 @@ export async function autoAssignDailySubstitutes(dateInput: string | Date, teach
 
     for (const candidate of item.slot.suggestions) {
       if (inMemoryBusy.has(`${candidate.id}|${item.slot.timeSlotId}`)) continue;
+      if ((inMemorySubDayCount.get(candidate.id) ?? 0) >= MAX_SUBSTITUTE_PERIODS_PER_DAY) continue;
       try {
         await assignSubstituteToSlot({
           slotId: item.slot.slotId,
@@ -638,12 +668,13 @@ export async function autoAssignDailySubstitutes(dateInput: string | Date, teach
           mode: 'auto',
         });
         inMemoryBusy.add(`${candidate.id}|${item.slot.timeSlotId}`);
+        inMemorySubDayCount.set(candidate.id, (inMemorySubDayCount.get(candidate.id) ?? 0) + 1);
         assigned = candidate;
         error = '';
         break;
       } catch (err) {
         error = (err as Error)?.message || 'Database error during assignment';
-        if (error.includes('already booked')) continue;
+        if (error.includes('already booked') || error.includes('substitute periods today')) continue;
       }
     }
 

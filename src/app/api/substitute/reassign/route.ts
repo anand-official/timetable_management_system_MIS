@@ -39,7 +39,8 @@ export async function POST(request: NextRequest) {
         (error as Error).message.includes('already reassigned') ||
         (error as Error).message.includes('teach this subject') ||
         (error as Error).message.includes('does not match') ||
-        (error as Error).message.includes('not assigned to this slot')
+        (error as Error).message.includes('not assigned to this slot') ||
+        (error as Error).message.includes('substitute periods today')
       )
         ? 400
         : 500;

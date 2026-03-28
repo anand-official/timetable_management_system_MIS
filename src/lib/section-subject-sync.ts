@@ -135,6 +135,11 @@ export async function syncPrimaryTeacherForSectionSubject(
   };
 }
 
+const LANGUAGE_SUBJECT_NAMES = new Set([
+  'hindi', 'nepali', 'french', 'hindi 2l', 'nepali 2l',
+]);
+const LANGUAGE_MAX_SIMULTANEOUS_SECTIONS = 3;
+
 export async function assertTeacherAvailableForSectionSubjectSlots(
   db: DbClient,
   args: {
@@ -150,6 +155,14 @@ export async function assertTeacherAvailableForSectionSubjectSlots(
     };
   }
 ) {
+  // Language subjects allow up to 3 simultaneous sections per teacher
+  const subjectRecord = await db.subject.findUnique({
+    where: { id: args.subjectId },
+    select: { name: true },
+  });
+  const isLanguageSubject = subjectRecord
+    ? LANGUAGE_SUBJECT_NAMES.has(subjectRecord.name.toLowerCase())
+    : false;
   const targetSlotMap = new Map<
     string,
     { dayId: string; timeSlotId: string; isWE?: boolean; isGames?: boolean; isYoga?: boolean }
@@ -201,6 +214,25 @@ export async function assertTeacherAvailableForSectionSubjectSlots(
       section: { select: { name: true } },
     },
   });
+
+  if (isLanguageSubject) {
+    // Group clashing slots by day+period; allow up to LANGUAGE_MAX_SIMULTANEOUS_SECTIONS per slot
+    const slotConflictCounts = new Map<string, number>();
+    for (const slot of candidateSlots) {
+      if (!slotHasTeacherId(slot, args.teacherId)) continue;
+      const key = `${slot.day.name}|${slot.timeSlot.periodNumber}`;
+      slotConflictCounts.set(key, (slotConflictCounts.get(key) ?? 0) + 1);
+    }
+    for (const [slotKey, count] of slotConflictCounts) {
+      if (count >= LANGUAGE_MAX_SIMULTANEOUS_SECTIONS) {
+        const [dayName, period] = slotKey.split('|');
+        throw new Error(
+          `Language teacher already has ${count} sections on ${dayName} period ${period} (max ${LANGUAGE_MAX_SIMULTANEOUS_SECTIONS})`
+        );
+      }
+    }
+    return;
+  }
 
   const firstConflict = candidateSlots.find((slot) => slotHasTeacherId(slot, args.teacherId));
   if (!firstConflict) return;

@@ -135,8 +135,8 @@ export async function syncPrimaryTeacherForSectionSubject(
   };
 }
 
-const LANGUAGE_SUBJECT_NAMES = new Set([
-  'hindi', 'nepali', 'french', 'hindi 2l', 'nepali 2l',
+const MULTI_SECTION_SUBJECT_NAMES = new Set([
+  'hindi', 'nepali', 'french', 'hindi 2l', 'nepali 2l', 'library',
 ]);
 const LANGUAGE_MAX_SIMULTANEOUS_SECTIONS = 3;
 
@@ -161,7 +161,7 @@ export async function assertTeacherAvailableForSectionSubjectSlots(
     select: { name: true },
   });
   const isLanguageSubject = subjectRecord
-    ? LANGUAGE_SUBJECT_NAMES.has(subjectRecord.name.toLowerCase())
+    ? MULTI_SECTION_SUBJECT_NAMES.has(subjectRecord.name.toLowerCase())
     : false;
   const targetSlotMap = new Map<
     string,

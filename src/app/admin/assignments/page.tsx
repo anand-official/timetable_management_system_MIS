@@ -253,7 +253,10 @@ export default function AssignmentsPage() {
     const resolvedName = isMulti
       ? (isWE ? 'Work Experience' : isLang2nd ? LANG2ND_VIRTUAL_ID : LANG3RD_VIRTUAL_ID)
       : (subjName ?? assignment?.subject.name ?? '');
-    const resolvedPeriods = isMulti ? 1 : (assignment?.periodsPerWeek ?? suggestPeriodsPerWeek(resolvedSubjectId, section.grade.name));
+    const wePeriodsDefault = ['VI','VII','VIII','IX'].includes(section.grade.name) ? 2 : 1;
+    const resolvedPeriods = isMulti
+      ? (isWE ? wePeriodsDefault : 1)
+      : (assignment?.periodsPerWeek ?? suggestPeriodsPerWeek(resolvedSubjectId, section.grade.name));
 
     setEditAssignment(isMulti ? undefined : assignment);
     setEditSection(section);

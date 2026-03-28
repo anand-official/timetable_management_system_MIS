@@ -74,5 +74,25 @@ export async function POST() {
     }
   }
 
+  // 3. Fix W.E. periods: VI–IX → 2/week, X → 1/week
+  const weSubjects = await db.subject.findMany({
+    where: { name: { in: ['Vocal','Keyboard','Instrument','Tabla','Dance','Art','Music','Work Experience'] } },
+    select: { id: true },
+  });
+  const weSubjectIds = weSubjects.map(s => s.id);
+  const allSections = await db.section.findMany({ include: { grade: { select: { name: true } } } });
+  const lowerSectionIds = allSections.filter(s => ['VI','VII','VIII','IX'].includes(s.grade.name)).map(s => s.id);
+  const xSectionIds     = allSections.filter(s => s.grade.name === 'X').map(s => s.id);
+
+  const fix2 = await db.teacherSubject.updateMany({
+    where: { subjectId: { in: weSubjectIds }, sectionId: { in: lowerSectionIds }, periodsPerWeek: { not: 2 } },
+    data: { periodsPerWeek: 2 },
+  });
+  const fix1 = await db.teacherSubject.updateMany({
+    where: { subjectId: { in: weSubjectIds }, sectionId: { in: xSectionIds }, periodsPerWeek: { not: 1 } },
+    data: { periodsPerWeek: 1 },
+  });
+  log.push(`Fixed W.E. periods: ${fix2.count} → 2/week (VI–IX), ${fix1.count} → 1/week (X)`);
+
   return NextResponse.json({ success: true, log });
 }

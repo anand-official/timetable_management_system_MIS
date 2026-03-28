@@ -243,6 +243,28 @@ export function buildPdfContentBlocks(grid: TimetableGrid): any[] {
     },
     buildLegend(),
     {
+      margin: [0, 14, 0, 0],
+      columns: [
+        {
+          width: '50%',
+          stack: [
+            { text: '______________________________', fontSize: 9, color: '#0F172A' },
+            { text: 'Principal', fontSize: 8.5, bold: true, color: '#334155', margin: [0, 3, 0, 0] },
+            { text: 'Retd. Col. Raju Peter', fontSize: 8, color: '#475569' },
+          ],
+        },
+        {
+          width: '50%',
+          alignment: 'right',
+          stack: [
+            { text: '______________________________', fontSize: 9, color: '#0F172A' },
+            { text: 'Time Table Incharge', fontSize: 8.5, bold: true, color: '#334155', margin: [0, 3, 0, 0] },
+            { text: 'A.K. Jha', fontSize: 8, color: '#475569' },
+          ],
+        },
+      ],
+    },
+    {
       text:      `Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
       fontSize:  7,
       color:     LABEL_TEXT,

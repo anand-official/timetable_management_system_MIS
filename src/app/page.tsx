@@ -41,8 +41,14 @@ import { DEFAULT_TEACHER_DEPARTMENTS } from '@/lib/teacher-departments';
 import { getEligibleTeachersForSectionSubject } from '@/lib/teacher-eligibility';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
+  type CombinedSlotBucket,
+  encodeCombinedSlotMetadata,
   getAllSlotTeacherIds,
+  getCombinedSlotBucket,
   getCombinedSlotDisplay,
+  getCombinedSlotDisplayForTeacher,
+  getPlainSlotNotes,
+  parseCombinedSlotMetadata,
   getSlotTeacherAbbreviations as getCombinedSlotTeacherAbbreviations,
   getSlotTeacherNames as getCombinedSlotTeacherNames,
 } from '@/lib/combined-slot';
@@ -201,6 +207,9 @@ interface LabRepairChange {
   teacherId: string | null;
 }
 
+const WE_SUBJECT_NAMES = new Set(['Art', 'Dance', 'Music', 'Work Experience']);
+const LANGUAGE_BUCKET_SUBJECT_NAMES = new Set(['Hindi', 'Nepali', 'French']);
+
 export default function TimetableManagementSystem() {
   // State
   const isMobile = useIsMobile();
@@ -245,6 +254,10 @@ export default function TimetableManagementSystem() {
   // Edit Dialog
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<Partial<TimetableSlot>>({});
+  const [parallelEditingEnabled, setParallelEditingEnabled] = useState(false);
+  const [secondaryEditingSubjectId, setSecondaryEditingSubjectId] = useState('');
+  const [secondaryEditingTeacherId, setSecondaryEditingTeacherId] = useState('');
+  const [parallelLanguageBucket, setParallelLanguageBucket] = useState<CombinedSlotBucket | ''>('');
   
   // AI Analysis
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
@@ -687,11 +700,86 @@ export default function TimetableManagementSystem() {
       return;
     }
 
+    const payload: Partial<TimetableSlot> = { ...editingSlot };
+    const plainNotes = getPlainSlotNotes(editingSlot.notes);
+    const existingCombinedMetadata = parseCombinedSlotMetadata(editingSlot.notes);
+
+    if (parallelEditingEnabled) {
+      if (!editingSlot.subjectId || !editingSlot.teacherId || !secondaryEditingSubjectId || !secondaryEditingTeacherId) {
+        toast.error('Select both subjects and both teachers');
+        return;
+      }
+
+      if (editingSlot.subjectId === secondaryEditingSubjectId && editingSlot.teacherId === secondaryEditingTeacherId) {
+        toast.error('Choose a different second assignment');
+        return;
+      }
+
+      const primarySubject = subjects.find((subject) => subject.id === editingSlot.subjectId);
+      const secondarySubject = subjects.find((subject) => subject.id === secondaryEditingSubjectId);
+      const primaryTeacher = teachers.find((teacher) => teacher.id === editingSlot.teacherId);
+      const secondaryTeacher = teachers.find((teacher) => teacher.id === secondaryEditingTeacherId);
+
+      if (!primarySubject || !secondarySubject || !primaryTeacher || !secondaryTeacher) {
+        toast.error('Invalid subject or teacher selection');
+        return;
+      }
+
+      const requiresLanguageBucket =
+        LANGUAGE_BUCKET_SUBJECT_NAMES.has(primarySubject.name) &&
+        LANGUAGE_BUCKET_SUBJECT_NAMES.has(secondarySubject.name);
+
+      if (requiresLanguageBucket && !parallelLanguageBucket) {
+        toast.error('Select whether this is 2nd Language or 3rd Language');
+        return;
+      }
+
+      payload.subjectId = primarySubject.id;
+      payload.teacherId = primaryTeacher.id;
+      payload.labTeacherId = secondaryTeacher.id;
+      payload.isWE = WE_SUBJECT_NAMES.has(primarySubject.name) || WE_SUBJECT_NAMES.has(secondarySubject.name);
+      payload.notes = encodeCombinedSlotMetadata(
+        {
+          kind: 'combined-slot',
+          bucket: requiresLanguageBucket ? parallelLanguageBucket : undefined,
+          grade: editingSection?.grade.name,
+          displayName: `${primarySubject.name} / ${secondarySubject.name}`,
+          displayCode: `${primarySubject.code} / ${secondarySubject.code}`,
+          options: [
+            {
+              subjectId: primarySubject.id,
+              subjectName: primarySubject.name,
+              subjectCode: primarySubject.code,
+              teacherId: primaryTeacher.id,
+              teacherName: primaryTeacher.name,
+              teacherAbbreviation: primaryTeacher.abbreviation,
+              sharing: 'single',
+            },
+            {
+              subjectId: secondarySubject.id,
+              subjectName: secondarySubject.name,
+              subjectCode: secondarySubject.code,
+              teacherId: secondaryTeacher.id,
+              teacherName: secondaryTeacher.name,
+              teacherAbbreviation: secondaryTeacher.abbreviation,
+              sharing: 'single',
+            },
+          ],
+        },
+        plainNotes
+      );
+    } else if (existingCombinedMetadata) {
+      payload.notes = plainNotes ?? null;
+      payload.labTeacherId = editingSlot.isLab ? editingSlot.labTeacherId ?? null : null;
+      const primarySubject = subjects.find((subject) => subject.id === editingSlot.subjectId);
+      payload.isWE = primarySubject ? WE_SUBJECT_NAMES.has(primarySubject.name) : false;
+    }
+
     try {
       const response = await fetch('/api/timetable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingSlot),
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
       
@@ -862,11 +950,24 @@ export default function TimetableManagementSystem() {
   );
   const editingSection = sections.find((section) => section.id === editingSlot.sectionId);
   const editingSubject = subjects.find((subject) => subject.id === editingSlot.subjectId);
+  const primaryEditingSubject = subjects.find((subject) => subject.id === editingSlot.subjectId);
   const eligibleTeachersForEditingSlot = getEligibleTeachersForSectionSubject(
     teachers,
     editingSubject,
     editingSection?.grade.name
   );
+  const secondaryEditingSubject = subjects.find((subject) => subject.id === secondaryEditingSubjectId);
+  const eligibleTeachersForSecondaryEditingSlot = getEligibleTeachersForSectionSubject(
+    teachers,
+    secondaryEditingSubject,
+    editingSection?.grade.name
+  );
+  const isLanguageBucketSelection =
+    parallelEditingEnabled &&
+    Boolean(primaryEditingSubject) &&
+    Boolean(secondaryEditingSubject) &&
+    LANGUAGE_BUCKET_SUBJECT_NAMES.has(primaryEditingSubject!.name) &&
+    LANGUAGE_BUCKET_SUBJECT_NAMES.has(secondaryEditingSubject!.name);
   const sectionSubjectSlotCount =
     editingSlot.sectionId && editingSlot.subjectId
       ? slots.filter(
@@ -885,6 +986,52 @@ export default function TimetableManagementSystem() {
     editingSection,
     editingSubject,
     eligibleTeachersForEditingSlot,
+  ]);
+
+  useEffect(() => {
+    if (!editDialogOpen) {
+      setParallelEditingEnabled(false);
+      setSecondaryEditingSubjectId('');
+      setSecondaryEditingTeacherId('');
+      setParallelLanguageBucket('');
+      return;
+    }
+
+    const metadata = parseCombinedSlotMetadata(editingSlot.notes);
+    const secondaryOption = metadata?.options[1];
+    setParallelEditingEnabled(Boolean(secondaryOption));
+    setSecondaryEditingSubjectId(secondaryOption?.subjectId ?? '');
+    setSecondaryEditingTeacherId(secondaryOption?.teacherId ?? '');
+    setParallelLanguageBucket(metadata?.bucket ?? '');
+  }, [editDialogOpen]);
+
+  useEffect(() => {
+    if (!parallelEditingEnabled && (secondaryEditingSubjectId || secondaryEditingTeacherId)) {
+      setSecondaryEditingSubjectId('');
+      setSecondaryEditingTeacherId('');
+    }
+    if (!parallelEditingEnabled && parallelLanguageBucket) {
+      setParallelLanguageBucket('');
+    }
+  }, [parallelEditingEnabled, secondaryEditingSubjectId, secondaryEditingTeacherId, parallelLanguageBucket]);
+
+  useEffect(() => {
+    if (!isLanguageBucketSelection && parallelLanguageBucket) {
+      setParallelLanguageBucket('');
+    }
+  }, [isLanguageBucketSelection, parallelLanguageBucket]);
+
+  useEffect(() => {
+    if (!parallelEditingEnabled || !secondaryEditingTeacherId) return;
+    if (!secondaryEditingSubject || !editingSection) return;
+    if (eligibleTeachersForSecondaryEditingSlot.some((teacher) => teacher.id === secondaryEditingTeacherId)) return;
+    setSecondaryEditingTeacherId('');
+  }, [
+    parallelEditingEnabled,
+    secondaryEditingTeacherId,
+    secondaryEditingSubject,
+    editingSection,
+    eligibleTeachersForSecondaryEditingSlot,
   ]);
 
   const triggerBlobDownload = (blob: Blob, filename: string) => {
@@ -1119,9 +1266,17 @@ export default function TimetableManagementSystem() {
     };
   };
 
-  const getTeacherCellSubjectLabel = (cellSlots: TimetableSlot[]) =>
+  const getDisplayedSubjectForTeacher = (slot: TimetableSlot, teacherId: string) => {
+    const combinedDisplay = getCombinedSlotDisplayForTeacher(slot.notes, teacherId);
+    if (combinedDisplay) {
+      return combinedDisplay;
+    }
+    return getDisplayedSubject(slot);
+  };
+
+  const getTeacherCellSubjectLabel = (cellSlots: TimetableSlot[], teacherId: string) =>
     Array.from(
-      new Set(cellSlots.map((slot) => getDisplayedSubject(slot)?.code).filter(Boolean))
+      new Set(cellSlots.map((slot) => getDisplayedSubjectForTeacher(slot, teacherId)?.code).filter(Boolean))
     ).join(' / ');
 
   const getTeacherCellRoomLabel = (cellSlots: TimetableSlot[]) =>
@@ -1190,6 +1345,8 @@ export default function TimetableManagementSystem() {
 
   // Slot type label
   const getSlotTypeLabel = (slot: TimetableSlot) => {
+    const combinedBucket = getCombinedSlotBucket(slot.notes);
+    if (combinedBucket) return { label: combinedBucket, color: 'text-indigo-600' };
     if (slot.isLab) return { label: 'LAB', color: 'text-blue-600' };
     if (slot.isGames) return { label: 'GAMES', color: 'text-emerald-600' };
     if (slot.isYoga) return { label: 'YOGA', color: 'text-violet-600' };
@@ -2192,7 +2349,7 @@ export default function TimetableManagementSystem() {
                                 const cellSlots = getTeacherCellSlots(teacherSlots, day.id, slot.id);
                                 const cellSlot = cellSlots[0];
                                 const sectionLabel = Array.from(new Set(cellSlots.map((item) => item.section?.name).filter(Boolean))).join(' / ');
-                                const subjectLabel = getTeacherCellSubjectLabel(cellSlots);
+                                const subjectLabel = getTeacherCellSubjectLabel(cellSlots, selectedTeacher);
                                 const cellTimeLabel = getTeacherCellTimeLabel(cellSlots);
                                 const roomLabel = getTeacherCellRoomLabel(cellSlots);
                                 const showCellTimeLabel = Boolean(cellTimeLabel) && cellTimeLabel !== formatDisplayTimeRange(slot.startTime, slot.endTime);
@@ -2763,12 +2920,23 @@ export default function TimetableManagementSystem() {
           <DialogHeader>
             <DialogTitle>Edit Timetable Slot</DialogTitle>
             <DialogDescription>
-              Choose an eligible teacher for the selected section and subject. Teacher changes sync across this section-subject.
+              Choose one or two subject-teacher pairs for this slot. Teacher changes sync across the matching section-subject assignments.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div>
+                <Label htmlFor="parallel-assignment" className="text-sm font-medium text-slate-700">Double assignment</Label>
+                <p className="text-xs text-slate-500">Use two dropdown sets for split periods such as Hindi/Nepali or W.E.</p>
+              </div>
+              <Switch
+                id="parallel-assignment"
+                checked={parallelEditingEnabled}
+                onCheckedChange={setParallelEditingEnabled}
+              />
+            </div>
             <div className="space-y-2">
-              <Label>Subject</Label>
+              <Label>{parallelEditingEnabled ? 'Primary Subject' : 'Subject'}</Label>
               <Select 
                 value={editingSlot.subjectId || ''} 
                 onValueChange={(v) => setEditingSlot(prev => ({ ...prev, subjectId: v || undefined }))}
@@ -2784,7 +2952,7 @@ export default function TimetableManagementSystem() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Teacher</Label>
+              <Label>{parallelEditingEnabled ? 'Primary Teacher' : 'Teacher'}</Label>
               <Select 
                 value={editingSlot.teacherId || ''} 
                 onValueChange={(v) => setEditingSlot(prev => ({ ...prev, teacherId: v || undefined }))}
@@ -2808,6 +2976,63 @@ export default function TimetableManagementSystem() {
                 </p>
               )}
             </div>
+            {parallelEditingEnabled && (
+              <>
+                <div className="space-y-2">
+                  <Label>Secondary Subject</Label>
+                  <Select
+                    value={secondaryEditingSubjectId}
+                    onValueChange={setSecondaryEditingSubjectId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select second subject" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subjects.map(s => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Secondary Teacher</Label>
+                  <Select
+                    value={secondaryEditingTeacherId}
+                    onValueChange={setSecondaryEditingTeacherId}
+                    disabled={!secondaryEditingSubjectId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={secondaryEditingSubjectId ? 'Select eligible teacher' : 'Select second subject first'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {eligibleTeachersForSecondaryEditingSlot.map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.name} ({t.abbreviation})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {secondaryEditingSubjectId && eligibleTeachersForSecondaryEditingSlot.length === 0 && (
+                    <p className="text-xs text-amber-600">No eligible teachers found for the second subject.</p>
+                  )}
+                </div>
+                {isLanguageBucketSelection && (
+                  <div className="space-y-2">
+                    <Label>Language Bucket</Label>
+                    <Select
+                      value={parallelLanguageBucket || undefined}
+                      onValueChange={(value) => setParallelLanguageBucket(value as CombinedSlotBucket)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Mark as 2nd or 3rd language" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="2nd Language">2nd Language</SelectItem>
+                        <SelectItem value="3rd Language">3rd Language</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </>
+            )}
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2">
                 <input 

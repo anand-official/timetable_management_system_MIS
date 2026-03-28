@@ -58,6 +58,7 @@ export async function GET(
   const grid = buildTeacherGrid(
     teacher.name,
     teacher.abbreviation,
+    teacherId,
     slots.filter((slot) => slotHasTeacherId(slot, teacherId)),
     days,
     timeSlots
@@ -71,7 +72,7 @@ export async function GET(
   try {
     if (format === 'csv') {
       const rows = teacherSlots.map((slot) => {
-        const displayFields = getSlotDisplayFields(slot);
+        const displayFields = getSlotDisplayFields(slot, teacherId);
         return [
           teacher.name,
           teacher.abbreviation,

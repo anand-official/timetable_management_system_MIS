@@ -70,3 +70,5 @@ __pycache__/
 # export/upload folders
 /download/
 /upload/
+
+.vercel

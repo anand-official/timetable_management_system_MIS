@@ -23,6 +23,7 @@ export interface CombinedSlotMetadata {
 }
 
 const COMBINED_SLOT_PREFIX = '__MIS_COMBINED_SLOT__=';
+const SUBSTITUTE_NOTE_PREFIX = '__MIS_SUBSTITUTE__=';
 
 function dedupe(values: Array<string | null | undefined>) {
   return values.filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
@@ -63,11 +64,15 @@ export function parseCombinedSlotMetadata(notes?: string | null): CombinedSlotMe
 }
 
 export function getPlainSlotNotes(notes?: string | null) {
-  if (!notes?.startsWith(COMBINED_SLOT_PREFIX)) return notes ?? null;
-  const firstLineEnd = notes.indexOf('\n');
-  if (firstLineEnd < 0) return null;
-  const trailing = notes.slice(firstLineEnd + 1).trim();
-  return trailing || null;
+  if (!notes) return null;
+  const lines = notes
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(
+      (line) => !line.startsWith(COMBINED_SLOT_PREFIX) && !line.startsWith(SUBSTITUTE_NOTE_PREFIX)
+    );
+  return lines.join('\n') || null;
 }
 
 export function getCombinedSlotDisplay(notes?: string | null) {
@@ -77,6 +82,25 @@ export function getCombinedSlotDisplay(notes?: string | null) {
     name: metadata.displayName,
     code: metadata.displayCode,
   };
+}
+
+export function getCombinedSlotOptionForTeacher(notes: string | null | undefined, teacherId: string) {
+  const metadata = parseCombinedSlotMetadata(notes);
+  if (!metadata) return null;
+  return metadata.options.find((option) => option.teacherId === teacherId) ?? null;
+}
+
+export function getCombinedSlotDisplayForTeacher(notes: string | null | undefined, teacherId: string) {
+  const option = getCombinedSlotOptionForTeacher(notes, teacherId);
+  if (!option) return null;
+  return {
+    name: option.subjectName,
+    code: option.subjectCode,
+  };
+}
+
+export function getCombinedSlotBucket(notes?: string | null) {
+  return parseCombinedSlotMetadata(notes)?.bucket ?? null;
 }
 
 export function getCombinedSlotTeacherIds(notes?: string | null) {

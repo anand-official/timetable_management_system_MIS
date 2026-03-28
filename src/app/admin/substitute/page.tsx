@@ -1,23 +1,31 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { toast } from 'sonner';
+import {
+  ArrowLeft,
+  CalendarDays,
+  CheckCircle2,
+  Clock,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  Plus,
+  RefreshCw,
+  Trash2,
+  UserCheck,
+  Users,
+  Zap,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
-import {
-  Users, CalendarDays, Zap, CheckCircle2, AlertCircle, RefreshCw,
-  ChevronRight, Info, TrendingDown, Award, BookOpen, UserCheck,
-  ArrowLeft, Sparkles, Clock,
-} from 'lucide-react';
-import Link from 'next/link';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Teacher = { id: string; name: string; abbreviation: string };
 
-type ScoredCandidate = {
+type Candidate = {
   id: string;
   name: string;
   abbreviation: string;
@@ -25,44 +33,28 @@ type ScoredCandidate = {
   reasons: string[];
 };
 
-type SlotRow = {
+type SuggestedSlot = {
   slotId: string;
   timeSlotId: string;
   periodNumber: number;
   dayName: string;
   sectionName: string;
+  sectionId: string;
   subjectName: string;
+  subjectCode: string;
+  subjectId: string | null;
   currentTeacher: { id: string; name: string; abbreviation: string } | null;
-  suggestions: ScoredCandidate[];
-  topPick: ScoredCandidate | null;
-  // UI state
-  status: 'pending' | 'assigned' | 'failed';
-  assignedTo?: ScoredCandidate;
+  assignedSubstitute: { id: string; name: string; abbreviation: string } | null;
+  suggestions: Candidate[];
+  topPick: Candidate | null;
 };
 
-type AutoResult = {
-  slotId: string;
-  periodNumber: number;
-  sectionName: string;
-  subjectName: string;
-  assigned: ScoredCandidate | null;
-  error: string | null;
+type DailyAbsence = {
+  absenceId: string;
+  reason?: string | null;
+  teacher: { id: string; name: string; abbreviation: string };
+  slots: SuggestedSlot[];
 };
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function scoreColor(score: number) {
-  if (score >= 70) return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-  if (score >= 40) return 'text-amber-700 bg-amber-50 border-amber-200';
-  return 'text-red-700 bg-red-50 border-red-200';
-}
-
-function scoreLabel(score: number) {
-  if (score >= 70) return 'Excellent';
-  if (score >= 40) return 'Good';
-  if (score >= 10) return 'Fair';
-  return 'Low';
-}
 
 function formatLocalDateInput(date: Date) {
   const year = date.getFullYear();
@@ -71,448 +63,459 @@ function formatLocalDateInput(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-// ─── Criteria Legend ─────────────────────────────────────────────────────────
-
-const CRITERIA = [
-  { icon: BookOpen, label: 'Direct class assignment', points: 25, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-  { icon: Users, label: 'Same department', points: 30, color: 'text-violet-600', bg: 'bg-violet-50' },
-  { icon: Award, label: 'Teaches the grade level', points: 20, color: 'text-teal-600', bg: 'bg-teal-50' },
-  { icon: TrendingDown, label: 'Lower current workload', points: 20, color: 'text-blue-600', bg: 'bg-blue-50' },
-  { icon: UserCheck, label: 'Not HOD (spares heads)', points: 10, color: 'text-amber-600', bg: 'bg-amber-50' },
-];
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
+function scoreColor(score: number) {
+  if (score >= 70) {
+    return 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-500/15 dark:border-emerald-500/30';
+  }
+  if (score >= 40) {
+    return 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-500/15 dark:border-amber-500/30';
+  }
+  return 'text-slate-600 bg-slate-50 border-slate-200 dark:text-slate-300 dark:bg-slate-800 dark:border-slate-700';
+}
 
 export default function SubstitutePage() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => formatLocalDateInput(new Date()));
+  const [absences, setAbsences] = useState<DailyAbsence[]>([]);
   const [loading, setLoading] = useState(false);
+  const [addingAbsence, setAddingAbsence] = useState(false);
   const [autoAssigning, setAutoAssigning] = useState(false);
-  const [rows, setRows] = useState<SlotRow[]>([]);
-  const [choiceBySlot, setChoiceBySlot] = useState<Record<string, string>>({});
-  const [submittingSlot, setSubmittingSlot] = useState<string | null>(null);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const [submittingKey, setSubmittingKey] = useState<string | null>(null);
+  const [deletingAbsenceId, setDeletingAbsenceId] = useState<string | null>(null);
+  const [choiceByKey, setChoiceByKey] = useState<Record<string, string>>({});
 
   const selectedTeacher = useMemo(
-    () => teachers.find(t => t.id === selectedTeacherId) ?? null,
+    () => teachers.find((teacher) => teacher.id === selectedTeacherId) ?? null,
     [teachers, selectedTeacherId]
   );
 
-  // ── Load teachers ──
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch('/api/timetable');
-        const data = await r.json();
-        setTeachers(data.teachers || []);
-        if ((data.teachers || []).length > 0) setSelectedTeacherId((data.teachers || [])[0].id);
-      } catch {
-        toast.error('Failed to load teachers');
-      }
-    })();
-  }, []);
+  const totalSlots = absences.reduce((sum, absence) => sum + absence.slots.length, 0);
+  const assignedSlots = absences.reduce(
+    (sum, absence) => sum + absence.slots.filter((slot) => slot.assignedSubstitute).length,
+    0
+  );
+  const pendingSlots = totalSlots - assignedSlots;
 
-  // ── Load suggestions ──
-  const loadSuggestions = async () => {
-    if (!selectedTeacherId || !selectedDate) {
-      toast.error('Select teacher and date');
-      return;
+  const loadTeachers = async () => {
+    try {
+      const response = await fetch('/api/timetable');
+      const data = await response.json();
+      const nextTeachers: Teacher[] = data.teachers || [];
+      setTeachers(nextTeachers);
+      if (!selectedTeacherId && nextTeachers.length > 0) {
+        setSelectedTeacherId(nextTeachers[0].id);
+      }
+    } catch {
+      toast.error('Failed to load teachers');
     }
+  };
+
+  const loadDayPlan = async () => {
     try {
       setLoading(true);
-      setHasLoaded(false);
-      const r = await fetch(`/api/substitute/suggest?teacherId=${selectedTeacherId}&date=${selectedDate}`);
-      const data = await r.json();
-      if (!r.ok || !data.success) throw new Error(data.error || `HTTP ${r.status}`);
-      const slots: SlotRow[] = (data.slots || []).map((s: any) => ({
-        ...s,
-        status: 'pending' as const,
-      }));
-      setRows(slots);
-      setChoiceBySlot({});
-      setHasLoaded(true);
-    } catch (err) {
-      toast.error('Failed to load substitute suggestions');
+      const response = await fetch(`/api/substitute/day?date=${selectedDate}`);
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`);
+      setAbsences(data.absences || []);
+      setChoiceByKey({});
+    } catch (error) {
+      toast.error((error as Error)?.message || 'Failed to load substitute plan');
     } finally {
       setLoading(false);
     }
   };
 
-  // ── Manual reassign ──
-  const reassign = async (slotId: string) => {
-    const substituteTeacherId = choiceBySlot[slotId] || rows.find(r => r.slotId === slotId)?.topPick?.id;
-    if (!substituteTeacherId) {
-      toast.error('Select a substitute teacher first');
-      return;
-    }
-    try {
-      setSubmittingSlot(slotId);
-      const r = await fetch('/api/substitute/reassign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slotId, substituteTeacherId, markAbsentTeacherId: selectedTeacherId, date: selectedDate }),
-      });
-      const data = await r.json();
-      if (!r.ok || !data.success) throw new Error(data.error || `HTTP ${r.status}`);
-      const assigned = rows.find(row => row.slotId === slotId)?.suggestions.find(s => s.id === substituteTeacherId);
-      setRows(prev => prev.map(row =>
-        row.slotId === slotId ? { ...row, status: 'assigned', assignedTo: assigned } : row
-      ));
-      toast.success(`P${rows.find(r => r.slotId === slotId)?.periodNumber} → ${assigned?.name ?? 'Substitute'} assigned`);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to reassign slot');
-    } finally {
-      setSubmittingSlot(null);
-    }
-  };
+  useEffect(() => {
+    void loadTeachers();
+  }, []);
 
-  // ── Auto-assign all ──
-  const autoAssignAll = async () => {
-    if (!selectedTeacherId || !selectedDate) return;
-    const pendingSlots = rows.filter(r => r.status === 'pending');
-    if (pendingSlots.length === 0) {
-      toast.info('No pending slots to assign');
+  useEffect(() => {
+    void loadDayPlan();
+  }, [selectedDate]);
+
+  const addAbsence = async () => {
+    if (!selectedTeacherId) {
+      toast.error('Select a teacher first');
       return;
     }
+
     try {
-      setAutoAssigning(true);
-      const r = await fetch('/api/substitute/auto-assign', {
+      setAddingAbsence(true);
+      const response = await fetch('/api/teacher-absence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teacherId: selectedTeacherId, date: selectedDate }),
       });
-      const data = await r.json();
-      if (!r.ok || !data.success) throw new Error(data.error || `HTTP ${r.status}`);
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`);
+      toast.success(`${selectedTeacher?.name ?? 'Teacher'} marked absent`);
+      await loadDayPlan();
+    } catch (error) {
+      toast.error((error as Error)?.message || 'Failed to add absence');
+    } finally {
+      setAddingAbsence(false);
+    }
+  };
 
-      const resultMap = new Map<string, AutoResult>(data.results.map((res: AutoResult) => [res.slotId, res]));
-      setRows(prev => prev.map(row => {
-        const result = resultMap.get(row.slotId);
-        if (!result) return row;
-        if (result.assigned) {
-          return { ...row, status: 'assigned', assignedTo: result.assigned };
-        }
-        return { ...row, status: 'failed' };
-      }));
+  const removeAbsence = async (absenceId: string) => {
+    try {
+      setDeletingAbsenceId(absenceId);
+      const response = await fetch(`/api/teacher-absence?id=${absenceId}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`);
+      toast.success('Absence removed');
+      await loadDayPlan();
+    } catch (error) {
+      toast.error((error as Error)?.message || 'Failed to remove absence');
+    } finally {
+      setDeletingAbsenceId(null);
+    }
+  };
 
-      const { assigned, failed } = data.summary;
-      if (assigned > 0) toast.success(`Auto-assigned ${assigned} slot${assigned !== 1 ? 's' : ''} successfully`);
-      if (failed > 0) toast.warning(`${failed} slot${failed !== 1 ? 's' : ''} could not be auto-assigned`);
-    } catch (err: any) {
-      toast.error(err.message || 'Auto-assign failed');
+  const assignSlot = async (absenceTeacherId: string, slot: SuggestedSlot) => {
+    const slotKey = `${absenceTeacherId}|${slot.slotId}`;
+    const substituteTeacherId = choiceByKey[slotKey] || slot.assignedSubstitute?.id || slot.topPick?.id;
+    if (!substituteTeacherId) {
+      toast.error('Select a substitute teacher first');
+      return;
+    }
+
+    try {
+      setSubmittingKey(slotKey);
+      const response = await fetch('/api/substitute/reassign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slotId: slot.slotId,
+          substituteTeacherId,
+          markAbsentTeacherId: absenceTeacherId,
+          date: selectedDate,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`);
+      toast.success(`P${slot.periodNumber} ${slot.sectionName} assigned`);
+      await loadDayPlan();
+    } catch (error) {
+      toast.error((error as Error)?.message || 'Failed to assign substitute');
+    } finally {
+      setSubmittingKey(null);
+    }
+  };
+
+  const autoAssignDay = async () => {
+    try {
+      setAutoAssigning(true);
+      const response = await fetch('/api/substitute/day/auto-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: selectedDate }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`);
+      if (data.summary.assigned > 0) {
+        toast.success(`Assigned ${data.summary.assigned} substitute slot${data.summary.assigned !== 1 ? 's' : ''}`);
+      }
+      if (data.summary.failed > 0) {
+        toast.warning(`${data.summary.failed} slot${data.summary.failed !== 1 ? 's' : ''} still need manual assignment`);
+      }
+      await loadDayPlan();
+    } catch (error) {
+      toast.error((error as Error)?.message || 'Failed to auto-assign substitutes');
     } finally {
       setAutoAssigning(false);
     }
   };
 
-  const pendingCount = rows.filter(r => r.status === 'pending').length;
-  const assignedCount = rows.filter(r => r.status === 'assigned').length;
+  const downloadReport = (format: 'pdf' | 'csv') => {
+    window.location.assign(`/api/substitute/export?date=${selectedDate}&format=${format}`);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-violet-50/10 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900">
-      {/* Header */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div className="border-b border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/90">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
           <div className="flex items-center gap-3">
-            <Link href="/" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <Link
+              href="/"
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            >
               <ArrowLeft className="h-4 w-4" />
             </Link>
             <div className="h-6 w-px bg-slate-200 dark:bg-slate-700" />
-            <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-              <Users className="h-4 w-4 text-white" />
+            <div
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-white"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+            >
+              <Users className="h-4 w-4" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-slate-900 dark:text-slate-100">Substitute Manager</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Mark absence · Auto-assign or manually replace</p>
+              <h1 className="text-base font-bold text-slate-900 dark:text-slate-100">Daily Substitute Manager</h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Add absences, assign substitutes, and export the day report
+              </p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => void loadDayPlan()} disabled={loading}>
+              <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => downloadReport('csv')} disabled={totalSlots === 0}>
+              <FileSpreadsheet className="mr-1.5 h-4 w-4" />
+              CSV
+            </Button>
+            <Button size="sm" onClick={() => downloadReport('pdf')} disabled={totalSlots === 0}>
+              <FileText className="mr-1.5 h-4 w-4" />
+              PDF
+            </Button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
-
-        {/* ── Criteria Panel ── */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl card-shadow p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Sparkles className="h-4 w-4 text-indigo-500" />
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Auto-Assign Scoring Criteria</h2>
-            <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">Higher score = better match</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {CRITERIA.map(({ icon: Icon, label, points, color, bg }) => (
-              <div key={label} className={`flex flex-col gap-2 p-3 rounded-xl border border-transparent ${bg} dark:bg-opacity-10`}>
-                <div className="flex items-center justify-between">
-                  <Icon className={`h-4 w-4 ${color}`} />
-                  <span className={`text-xs font-bold ${color}`}>+{points}</span>
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400 leading-tight">{label}</p>
+      <div className="mx-auto max-w-7xl space-y-6 px-6 py-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          {[
+            { label: 'Absent Teachers', value: absences.length, icon: Users, tone: 'text-indigo-600 bg-indigo-50 dark:text-indigo-300 dark:bg-indigo-500/15' },
+            { label: 'Total Slots', value: totalSlots, icon: Clock, tone: 'text-sky-600 bg-sky-50 dark:text-sky-300 dark:bg-sky-500/15' },
+            { label: 'Assigned', value: assignedSlots, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-500/15' },
+            { label: 'Pending', value: pendingSlots, icon: UserCheck, tone: 'text-amber-600 bg-amber-50 dark:text-amber-300 dark:bg-amber-500/15' },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${item.tone}`}>
+                <item.icon className="h-5 w-5" />
               </div>
-            ))}
-          </div>
+              <div>
+                <div className="text-2xl font-bold leading-none text-slate-900 dark:text-slate-100">{item.value}</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.label}</div>
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* ── Selection ── */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl card-shadow p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <CalendarDays className="h-4 w-4 text-indigo-500" />
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Mark Absent Teacher</h2>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="mb-4 flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Daily Absence Setup</h2>
           </div>
-          <div className="flex flex-col sm:flex-row gap-3 items-end">
-            <div className="flex-1 space-y-1.5">
-              <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Absent Teacher</label>
+
+          <div className="grid grid-cols-1 items-end gap-3 lg:grid-cols-[220px_minmax(0,1fr)_auto_auto]">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Date</label>
+              <Input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Add Absent Teacher</label>
               <Select value={selectedTeacherId} onValueChange={setSelectedTeacherId}>
-                <SelectTrigger className="border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                <SelectTrigger>
                   <SelectValue placeholder="Select teacher" />
                 </SelectTrigger>
                 <SelectContent>
-                  {teachers.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.name} ({t.abbreviation})</SelectItem>
+                  {teachers.map((teacher) => (
+                    <SelectItem key={teacher.id} value={teacher.id}>
+                      {teacher.name} ({teacher.abbreviation})
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="w-44 space-y-1.5">
-              <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Date of Absence</label>
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
-              />
-            </div>
+            <Button onClick={addAbsence} disabled={addingAbsence || !selectedTeacherId}>
+              {addingAbsence ? <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 h-4 w-4" />}
+              Add Absent
+            </Button>
 
             <Button
-              onClick={loadSuggestions}
-              disabled={loading}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 shrink-0"
+              onClick={autoAssignDay}
+              disabled={autoAssigning || pendingSlots === 0}
+              className="text-white"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
             >
-              {loading ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <ChevronRight className="h-4 w-4 mr-1" />}
-              {loading ? 'Loading…' : 'Load Slots'}
+              {autoAssigning ? <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" /> : <Zap className="mr-1.5 h-4 w-4" />}
+              Auto-Assign Day
             </Button>
           </div>
         </div>
 
-        {/* ── Results ── */}
-        {hasLoaded && (
-          <div className="bg-white dark:bg-slate-900 rounded-2xl card-shadow overflow-hidden">
-            {/* Results header */}
-            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    {selectedTeacher?.name}'s Slots — {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}
-                  </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    {rows.length} slot{rows.length !== 1 ? 's' : ''} ·{' '}
-                    <span className="text-emerald-600 font-medium">{assignedCount} assigned</span>
-                    {pendingCount > 0 && <> · <span className="text-amber-600 font-medium">{pendingCount} pending</span></>}
-                  </p>
-                </div>
-              </div>
+        {loading ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            <RefreshCw className="mx-auto mb-3 h-5 w-5 animate-spin text-indigo-500 dark:text-indigo-400" />
+            Loading daily substitute board...
+          </div>
+        ) : absences.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <Users className="mx-auto mb-3 h-10 w-10 text-slate-300 dark:text-slate-600" />
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              No absent teachers marked for {selectedDate}
+            </p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Add one or more absences above to generate the day's substitute plan.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {absences.map((absence) => {
+              const absenceAssigned = absence.slots.filter((slot) => slot.assignedSubstitute).length;
 
-              {pendingCount > 0 && (
-                <Button
-                  onClick={autoAssignAll}
-                  disabled={autoAssigning}
-                  className="btn-glow text-white text-sm font-semibold px-4 py-2 rounded-xl"
-                  style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+              return (
+                <div
+                  key={absence.absenceId}
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
                 >
-                  {autoAssigning
-                    ? <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Assigning…</>
-                    : <><Zap className="h-3.5 w-3.5 mr-1.5" /> Auto-Assign All ({pendingCount})</>
-                  }
-                </Button>
-              )}
-            </div>
-
-            {rows.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="h-12 w-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3">
-                  <Clock className="h-6 w-6 text-slate-400" />
-                </div>
-                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No slots found</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  This teacher has no scheduled classes on the selected day.
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {rows.map((row) => (
-                  <SlotCard
-                    key={row.slotId}
-                    row={row}
-                    choiceBySlot={choiceBySlot}
-                    submittingSlot={submittingSlot}
-                    onChoiceChange={(slotId, val) => setChoiceBySlot(prev => ({ ...prev, [slotId]: val }))}
-                    onReassign={reassign}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {!hasLoaded && !loading && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="h-16 w-16 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center mb-4">
-              <Users className="h-8 w-8 text-indigo-400" />
-            </div>
-            <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">Select a teacher and date</p>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 max-w-xs">
-              Choose the absent teacher and date above, then click <strong>Load Slots</strong> to see their schedule and substitute options.
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Slot Card ─────────────────────────────────────────────────────────────────
-
-function SlotCard({
-  row,
-  choiceBySlot,
-  submittingSlot,
-  onChoiceChange,
-  onReassign,
-}: {
-  row: SlotRow;
-  choiceBySlot: Record<string, string>;
-  submittingSlot: string | null;
-  onChoiceChange: (slotId: string, val: string) => void;
-  onReassign: (slotId: string) => void;
-}) {
-  const currentChoice = choiceBySlot[row.slotId] || row.topPick?.id || '';
-  const chosenCandidate = row.suggestions.find(s => s.id === currentChoice);
-
-  if (row.status === 'assigned') {
-    return (
-      <div className="px-5 py-4 flex items-center gap-4 bg-emerald-50/60 dark:bg-emerald-950/20">
-        <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 shrink-0">
-          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">P{row.periodNumber}</span>
-            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{row.sectionName}</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">{row.subjectName}</span>
-          </div>
-          <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5 font-medium">
-            Assigned to {row.assignedTo?.name ?? 'Substitute'} ({row.assignedTo?.abbreviation})
-          </p>
-        </div>
-        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs">Assigned</Badge>
-      </div>
-    );
-  }
-
-  if (row.status === 'failed') {
-    return (
-      <div className="px-5 py-4 flex items-center gap-4 bg-red-50/60 dark:bg-red-950/20">
-        <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-red-100 dark:bg-red-900/30 shrink-0">
-          <AlertCircle className="h-5 w-5 text-red-500" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">P{row.periodNumber}</span>
-            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{row.sectionName}</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">{row.subjectName}</span>
-          </div>
-          <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">No suitable substitute available</p>
-        </div>
-        <Badge className="bg-red-100 text-red-700 border-red-200 text-xs">Unassigned</Badge>
-      </div>
-    );
-  }
-
-  return (
-    <div className="px-5 py-4">
-      <div className="flex items-start gap-4">
-        {/* Period badge */}
-        <div className="flex-shrink-0 h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 flex flex-col items-center justify-center">
-          <span className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">P</span>
-          <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300 leading-none">{row.periodNumber}</span>
-        </div>
-
-        <div className="flex-1 min-w-0 space-y-3">
-          {/* Slot info */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{row.sectionName}</span>
-            <span className="text-xs text-slate-400">·</span>
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{row.subjectName}</span>
-            {row.currentTeacher && (
-              <>
-                <span className="text-xs text-slate-400">·</span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">
-                  Currently: <span className="font-medium">{row.currentTeacher.abbreviation}</span>
-                </span>
-              </>
-            )}
-          </div>
-
-          {/* Top pick score reasoning */}
-          {row.topPick && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-slate-500 dark:text-slate-400">Best match:</span>
-              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">{row.topPick.name}</span>
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${scoreColor(row.topPick.score)}`}>
-                {scoreLabel(row.topPick.score)} · {row.topPick.score}pts
-              </span>
-              <div className="flex flex-wrap gap-1">
-                {row.topPick.reasons.slice(0, 3).map(r => (
-                  <span key={r} className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full">
-                    {r}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {row.suggestions.length === 0 && (
-            <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
-              <AlertCircle className="h-3 w-3" /> No eligible substitutes found for this slot
-            </p>
-          )}
-        </div>
-
-        {/* Actions */}
-        {row.suggestions.length > 0 && (
-          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-            <Select
-              value={currentChoice}
-              onValueChange={(v) => onChoiceChange(row.slotId, v)}
-            >
-              <SelectTrigger className="w-48 text-xs border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-xl h-9">
-                <SelectValue placeholder="Pick substitute" />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                {row.suggestions.map((s, i) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    <div className="flex items-center gap-2 py-0.5">
-                      <span className="font-medium">{s.name}</span>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${scoreColor(s.score)}`}>
-                        {s.score}pts
-                      </span>
-                      {i === 0 && <span className="text-[9px] text-indigo-500 font-bold">★ Best</span>}
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{absence.teacher.name}</h3>
+                        <Badge variant="outline" className="dark:border-slate-700 dark:text-slate-200">
+                          {absence.teacher.abbreviation}
+                        </Badge>
+                        <Badge className="border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                          {absenceAssigned}/{absence.slots.length} assigned
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {absence.slots.length === 0
+                          ? 'No timetable slots on this day.'
+                          : `${new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-IN', {
+                              weekday: 'long',
+                              day: 'numeric',
+                              month: 'short',
+                            })} substitute plan`}
+                      </p>
                     </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
 
-            <Button
-              size="sm"
-              onClick={() => onReassign(row.slotId)}
-              disabled={submittingSlot === row.slotId || !currentChoice}
-              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white h-9 px-4 text-xs font-semibold"
-            >
-              {submittingSlot === row.slotId
-                ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                : 'Assign'
-              }
-            </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void removeAbsence(absence.absenceId)}
+                      disabled={deletingAbsenceId === absence.absenceId}
+                    >
+                      {deletingAbsenceId === absence.absenceId ? (
+                        <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="mr-1.5 h-4 w-4" />
+                      )}
+                      Remove
+                    </Button>
+                  </div>
+
+                  {absence.slots.length === 0 ? (
+                    <div className="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">
+                      This teacher has no scheduled slots on the selected day.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {absence.slots.map((slot) => {
+                        const choiceKey = `${absence.teacher.id}|${slot.slotId}`;
+                        const currentChoice =
+                          choiceByKey[choiceKey] || slot.assignedSubstitute?.id || slot.topPick?.id || '';
+                        const submitting = submittingKey === choiceKey;
+
+                        return (
+                          <div key={slot.slotId} className="px-5 py-4">
+                            <div className="flex flex-wrap items-start gap-4">
+                              <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300">
+                                <span className="text-[9px] font-bold uppercase">P</span>
+                                <span className="text-sm font-bold leading-none">{slot.periodNumber}</span>
+                              </div>
+
+                              <div className="min-w-[260px] flex-1 space-y-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                    {slot.sectionName}
+                                  </span>
+                                  <span className="text-xs text-slate-400 dark:text-slate-500">&middot;</span>
+                                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                                    {slot.subjectName}
+                                  </span>
+                                  <span className="text-xs text-slate-400 dark:text-slate-500">&middot;</span>
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                                    Absent: {absence.teacher.abbreviation}
+                                  </span>
+                                </div>
+
+                                {slot.assignedSubstitute ? (
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
+                                      Assigned
+                                    </Badge>
+                                    <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                                      {slot.assignedSubstitute.name} ({slot.assignedSubstitute.abbreviation})
+                                    </span>
+                                  </div>
+                                ) : slot.topPick ? (
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">Best match:</span>
+                                    <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                      {slot.topPick.name} ({slot.topPick.abbreviation})
+                                    </span>
+                                    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-bold ${scoreColor(slot.topPick.score)}`}>
+                                      {slot.topPick.score} pts
+                                    </span>
+                                    {slot.topPick.reasons.slice(0, 2).map((reason) => (
+                                      <span
+                                        key={reason}
+                                        className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-slate-800 dark:text-slate-300"
+                                      >
+                                        {reason}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-amber-600 dark:text-amber-300">
+                                    No eligible substitute suggestions available for this slot.
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center justify-end gap-2">
+                                <Select
+                                  value={currentChoice}
+                                  onValueChange={(value) =>
+                                    setChoiceByKey((prev) => ({ ...prev, [choiceKey]: value }))
+                                  }
+                                  disabled={slot.suggestions.length === 0}
+                                >
+                                  <SelectTrigger className="w-60">
+                                    <SelectValue placeholder="Select substitute teacher" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {slot.suggestions.map((candidate, index) => (
+                                      <SelectItem key={candidate.id} value={candidate.id}>
+                                        {candidate.name} ({candidate.abbreviation}){index === 0 ? ' • Best' : ''}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+
+                                <Button
+                                  onClick={() => void assignSlot(absence.teacher.id, slot)}
+                                  disabled={submitting || !currentChoice}
+                                  className="min-w-[110px]"
+                                >
+                                  {submitting ? (
+                                    <RefreshCw className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Download className="mr-1.5 h-4 w-4" />
+                                  )}
+                                  {slot.assignedSubstitute ? 'Reassign' : 'Assign'}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

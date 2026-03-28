@@ -1,5 +1,7 @@
 import {
+  getCombinedSlotBucket,
   getCombinedSlotDisplay,
+  getCombinedSlotDisplayForTeacher,
   getPlainSlotNotes,
   getSlotTeacherAbbreviations,
   getSlotTeacherNames,
@@ -61,6 +63,8 @@ export function getTeacherExportLabel(slot: {
 }
 
 export function getSlotTypeLabel(slot: Pick<SlotLike, 'isLab' | 'isGames' | 'isYoga' | 'isLibrary' | 'isInnovation' | 'isWE'>): string {
+  const combinedBucket = getCombinedSlotBucket((slot as SlotLike).notes);
+  if (combinedBucket) return combinedBucket;
   if (slot.isLab) return 'Lab';
   if (slot.isGames) return 'Games';
   if (slot.isYoga) return 'Yoga';
@@ -70,9 +74,11 @@ export function getSlotTypeLabel(slot: Pick<SlotLike, 'isLab' | 'isGames' | 'isY
   return 'Regular';
 }
 
-export function getSlotDisplayFields(slot: SlotLike) {
+export function getSlotDisplayFields(slot: SlotLike, teacherId?: string) {
   const displayTimeSlot = getSectionDisplayTimeSlot(slot.section?.name ?? null, slot.timeSlot);
-  const combinedDisplay = getCombinedSlotDisplay(slot.notes);
+  const combinedDisplay =
+    (teacherId ? getCombinedSlotDisplayForTeacher(slot.notes, teacherId) : null) ??
+    getCombinedSlotDisplay(slot.notes);
   const teacherLabel = getTeacherExportLabel(slot);
 
   return {

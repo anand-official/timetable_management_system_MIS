@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
           sortedAllSlots
             .filter((slot) => slotHasTeacherId(slot, teacher.id))
             .map((slot) => {
-              const displayFields = getSlotDisplayFields(slot);
+              const displayFields = getSlotDisplayFields(slot, teacher.id);
               return [
                 teacher.name,
                 teacher.abbreviation,
@@ -249,7 +249,7 @@ export async function GET(request: NextRequest) {
       if (type === 'teacher') {
         grids = teachers.map(t => {
           const teacherSlots = allSlots.filter((slot) => slotHasTeacherId(slot, t.id));
-          const g = buildTeacherGrid(t.name, t.abbreviation, teacherSlots, days, timeSlots);
+          const g = buildTeacherGrid(t.name, t.abbreviation, t.id, teacherSlots, days, timeSlots);
           g.subtitle = subtitle;
           return g;
         });
@@ -282,7 +282,7 @@ export async function GET(request: NextRequest) {
       if (type === 'teacher') {
         grids = teachers.map(t => {
           const teacherSlots = allSlots.filter((slot) => slotHasTeacherId(slot, t.id));
-          const g = buildTeacherGrid(t.name, t.abbreviation, teacherSlots, days, timeSlots);
+          const g = buildTeacherGrid(t.name, t.abbreviation, t.id, teacherSlots, days, timeSlots);
           g.subtitle = subtitle;
           return g;
         });

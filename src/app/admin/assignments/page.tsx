@@ -1,22 +1,16 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { toast } from 'sonner';
+import { AlertTriangle, BookOpen, CheckCircle2, ChevronLeft, RefreshCw, Users } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
-import { toast } from 'sonner';
-import { Users, BookOpen, ChevronLeft, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import Link from 'next/link';
-import { isLabDepartment } from '@/lib/teacher-departments';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getEligibleTeachersForSectionSubject } from '@/lib/teacher-eligibility';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Teacher {
   id: string;
@@ -54,20 +48,16 @@ interface Section {
   grade: { name: string };
 }
 
-// ─── Category colour chips ─────────────────────────────────────────────────
-
 const CATEGORY_COLOUR: Record<string, string> = {
-  Core: 'bg-indigo-100 text-indigo-700',
-  Science: 'bg-emerald-100 text-emerald-700',
-  Language: 'bg-amber-100 text-amber-700',
-  Elective: 'bg-purple-100 text-purple-700',
-  Commerce: 'bg-sky-100 text-sky-700',
-  Activity: 'bg-rose-100 text-rose-700',
+  Core: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
+  Science: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+  Language: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+  Elective: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+  Commerce: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
+  Activity: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
 };
 
 const GRADES = ['VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-
-// ─── Workload bar ─────────────────────────────────────────────────────────
 
 function WorkloadBar({ assigned, target }: { assigned: number; target: number }) {
   const pct = target > 0 ? Math.min(100, Math.round((assigned / target) * 100)) : 0;
@@ -75,18 +65,17 @@ function WorkloadBar({ assigned, target }: { assigned: number; target: number })
     pct > 110 ? 'bg-red-500' :
     pct >= 90 ? 'bg-emerald-500' :
     pct >= 70 ? 'bg-amber-400' :
-    'bg-slate-300';
+    'bg-slate-300 dark:bg-slate-600';
+
   return (
     <div className="flex items-center gap-1.5">
-      <div className="h-1.5 w-16 rounded-full bg-slate-100 overflow-hidden">
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
         <div className={`h-full rounded-full transition-all ${colour}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-[10px] text-slate-500">{assigned}/{target}</span>
+      <span className="text-[10px] text-slate-500 dark:text-slate-400">{assigned}/{target}</span>
     </div>
   );
 }
-
-// ─── Cell component ────────────────────────────────────────────────────────
 
 function AssignmentCell({
   assignment,
@@ -95,32 +84,31 @@ function AssignmentCell({
 }: {
   assignment?: Assignment;
   subjectName: string;
-  onEdit: (a?: Assignment, subjectId?: string, subjectName?: string) => void;
+  onEdit: (assignment?: Assignment, subjectId?: string, subjectName?: string) => void;
 }) {
   if (!assignment) {
     return (
       <button
         onClick={() => onEdit(undefined, undefined, subjectName)}
-        className="w-full h-full min-h-[40px] rounded text-[10px] text-slate-300 hover:bg-slate-50 hover:text-slate-400 transition border border-dashed border-slate-200 flex items-center justify-center"
+        className="flex min-h-[40px] h-full w-full items-center justify-center rounded border border-dashed border-slate-200 text-[10px] text-slate-300 transition hover:bg-slate-50 hover:text-slate-500 dark:border-slate-700 dark:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
       >
-        —
+        Add
       </button>
     );
   }
+
   return (
     <button
       onClick={() => onEdit(assignment)}
-      className="w-full h-full min-h-[40px] rounded px-1.5 py-1 text-left hover:bg-indigo-50 transition group border border-transparent hover:border-indigo-200"
+      className="group h-full min-h-[40px] w-full rounded border border-transparent px-1.5 py-1 text-left transition hover:border-indigo-200 hover:bg-indigo-50 dark:hover:border-indigo-500/30 dark:hover:bg-indigo-500/10"
     >
-      <div className="font-semibold text-[11px] text-slate-800 group-hover:text-indigo-700 leading-tight">
+      <div className="text-[11px] font-semibold leading-tight text-slate-800 group-hover:text-indigo-700 dark:text-slate-100 dark:group-hover:text-indigo-300">
         {assignment.teacher.abbreviation}
       </div>
-      <div className="text-[10px] text-slate-400 leading-tight">{assignment.periodsPerWeek}p/w</div>
+      <div className="text-[10px] leading-tight text-slate-400 dark:text-slate-500">{assignment.periodsPerWeek}p/w</div>
     </button>
   );
 }
-
-// ─── Main page ─────────────────────────────────────────────────────────────
 
 export default function AssignmentsPage() {
   const [selectedGrade, setSelectedGrade] = useState('IX');
@@ -132,12 +120,12 @@ export default function AssignmentsPage() {
   const [coverageMap, setCoverageMap] = useState<Record<string, Record<string, Assignment>>>({});
   const [loading, setLoading] = useState(false);
 
-  // Edit dialog
   const [editOpen, setEditOpen] = useState(false);
   const [editAssignment, setEditAssignment] = useState<Assignment | undefined>();
   const [editSection, setEditSection] = useState<Section | undefined>();
   const [editSubjectId, setEditSubjectId] = useState('');
   const [editSubjectName, setEditSubjectName] = useState('');
+  const [editPeriodsPerWeek, setEditPeriodsPerWeek] = useState('1');
   const [newTeacherId, setNewTeacherId] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -159,48 +147,25 @@ export default function AssignmentsPage() {
     }
   }, [selectedGrade]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  // Subjects for this grade
   const gradeSubjectIds = gradeSubjects[selectedGrade] || [];
-  const gradeSections = sections.filter(s => s.grade.name === selectedGrade);
+  const gradeSections = sections.filter((section) => section.grade.name === selectedGrade);
 
-  // Eligible teachers for a given subject (by department and teachableGrades)
-  const eligibleTeachers = (subjectId: string) => {
-    const subj = subjects.find(s => s.id === subjectId);
-    if (!subj) return teachers;
-    return teachers.filter(t => {
-      const canTeachGrade = t.teachableGrades.includes(selectedGrade);
-      if (!canTeachGrade) return false;
-      // Match by department → subject category heuristic
-      const dept = t.department.toLowerCase();
-      const subName = subj.name.toLowerCase();
-      if (dept === 'sports' && subName === 'games') return true;
-      if (dept === 'yoga' && (subName === 'yoga' || subName === 'aerobics')) return true;
-      if (dept === 'library' && subName === 'library') return true;
-      if (isLabDepartment(t.department)) return false; // lab assistants don't get assigned
-      if (dept === 'counselling') return false;
-      if (subj.category === 'Activity') {
-        return ['art', 'dance', 'music', 'sports', 'yoga', 'library'].includes(dept) ||
-               dept === subj.name.toLowerCase();
-      }
-      if (subj.category === 'Commerce') return dept === 'commerce' || dept === 'economics';
-      if (subName === 'economics') return dept === 'economics' || dept === 'commerce';
-      if (subName === 'geography' || subName === 'history') return dept === 'social studies';
-      if (subName === 'social studies') return dept === 'social studies';
-      if (subName === 'hindi') return dept === 'hindi';
-      if (subName === 'nepali') return dept === 'nepali';
-      if (subName === 'french') return dept === 'french';
-      if (subName === 'home science') return dept === 'home science';
-      if (subName === 'informatics practices') return dept === 'computer science';
-      if (subName === 'computer science') return dept === 'computer science';
-      if (subName === 'mathematics') return dept === 'mathematics';
-      if (subName === 'english') return dept === 'english';
-      if (subName === 'physics') return dept === 'physics';
-      if (subName === 'chemistry') return dept === 'chemistry';
-      if (subName === 'biology' || subName === 'science') return dept === 'biology';
-      return false;
-    });
+  const suggestPeriodsPerWeek = (subjectId: string, gradeName: string) => {
+    const gradeMatches = assignments.filter(
+      (assignment) => assignment.subjectId === subjectId && assignment.section.grade.name === gradeName
+    );
+    if (gradeMatches.length === 0) return 1;
+
+    const counts = new Map<number, number>();
+    for (const match of gradeMatches) {
+      counts.set(match.periodsPerWeek, (counts.get(match.periodsPerWeek) ?? 0) + 1);
+    }
+
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0] ?? gradeMatches[0].periodsPerWeek;
   };
 
   const editGrade = editSection?.grade.name ?? editAssignment?.section.grade.name;
@@ -213,188 +178,244 @@ export default function AssignmentsPage() {
     setNewTeacherId('');
   }, [editOpen, newTeacherId, editEligibleTeachers]);
 
-  const openEdit = (assignment?: Assignment, subjectId?: string, subjectName?: string) => {
-    setEditAssignment(assignment);
-    setEditSubjectId(subjectId ?? assignment?.subjectId ?? '');
-    setEditSubjectName(subjectName ?? assignment?.subject.name ?? '');
-    setNewTeacherId(assignment?.teacherId ?? '');
-    setEditSection(undefined);
-    setEditOpen(true);
-  };
-
   const openEditForCell = (section: Section, assignment?: Assignment, subjId?: string, subjName?: string) => {
+    const resolvedSubjectId = subjId ?? assignment?.subjectId ?? '';
+    const resolvedPeriods = assignment?.periodsPerWeek ?? suggestPeriodsPerWeek(resolvedSubjectId, section.grade.name);
+
     setEditAssignment(assignment);
     setEditSection(section);
-    setEditSubjectId(subjId ?? assignment?.subjectId ?? '');
+    setEditSubjectId(resolvedSubjectId);
     setEditSubjectName(subjName ?? assignment?.subject.name ?? '');
+    setEditPeriodsPerWeek(String(resolvedPeriods));
     setNewTeacherId(assignment?.teacherId ?? '');
     setEditOpen(true);
   };
 
   const handleSave = async () => {
-    if (!newTeacherId) { toast.error('Select a teacher'); return; }
+    if (!newTeacherId) {
+      toast.error('Select a teacher');
+      return;
+    }
+
+    if (!editSubjectId) {
+      toast.error('Subject is missing for this assignment');
+      return;
+    }
+
+    if (!editAssignment && !editSection) {
+      toast.error('Section is missing for this assignment');
+      return;
+    }
+
+    const periodsPerWeek = Number(editPeriodsPerWeek);
+    if (!Number.isFinite(periodsPerWeek) || periodsPerWeek <= 0) {
+      toast.error('Enter a valid periods/week value');
+      return;
+    }
+
     setSaving(true);
     try {
       if (editAssignment) {
-        // Update existing
         const res = await fetch('/api/assignments', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ assignmentId: editAssignment.id, newTeacherId }),
         });
         const data = await res.json();
-        if (!res.ok) { throw new Error(data.error); }
+        if (!res.ok) throw new Error(data.error || 'Failed to update assignment');
         toast.success(data.message || 'Assignment updated');
+      } else {
+        const res = await fetch('/api/assignments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            teacherId: newTeacherId,
+            subjectId: editSubjectId,
+            sectionId: editSection?.id,
+            periodsPerWeek,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create assignment');
+        toast.success(data.message || 'Assignment created');
       }
+
       setEditOpen(false);
-      load();
-    } catch (e: any) {
-      toast.error(e.message);
+      await load();
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to save assignment');
     } finally {
       setSaving(false);
     }
   };
 
-  // Stats
   const totalAssignments = assignments.length;
-  const totalPeriods = assignments.reduce((s, a) => s + a.periodsPerWeek, 0);
-  const overloaded = teachers.filter(t => t.assignedPeriods > t.targetWorkload + 2).length;
-
-  // ── Render ───────────────────────────────────────────────────────────────
+  const totalPeriods = assignments.reduce((sum, assignment) => sum + assignment.periodsPerWeek, 0);
+  const overloaded = teachers.filter((teacher) => teacher.assignedPeriods > teacher.targetWorkload + 2).length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-violet-50/10 p-4 md:p-6">
-      {/* Header */}
-      <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-violet-50/10 p-4 md:p-6 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <Link href="/">
-            <Button variant="ghost" size="sm" className="text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg gap-1">
-              <ChevronLeft className="h-4 w-4" /> Back
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1 rounded-lg text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 dark:text-slate-400 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back
             </Button>
           </Link>
-          <div className="h-8 w-px bg-slate-200" />
+          <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
           <div>
-            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <div className="h-7 w-7 rounded-lg flex items-center justify-center stat-icon-blue shadow-md shadow-blue-100">
+            <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-slate-100">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 shadow-md shadow-indigo-200 dark:shadow-none">
                 <Users className="h-3.5 w-3.5 text-white" />
               </div>
               Teacher Assignments
             </h1>
-            <p className="text-sm text-slate-500 mt-0.5">One teacher per section per subject — the backbone of timetable generation</p>
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+              One teacher per section per subject, with direct fixes for missing assignment cells.
+            </p>
           </div>
         </div>
+
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={load} disabled={loading} className="rounded-lg border-slate-200 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+            className="gap-1.5 rounded-lg border-slate-200 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-700 dark:hover:border-indigo-500/30 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+          >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 stagger-children">
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
-          { label: 'Assignments', value: totalAssignments, icon: BookOpen, iconClass: 'stat-icon-blue', shadow: 'shadow-blue-100' },
-          { label: 'Periods/week', value: totalPeriods, icon: CheckCircle2, iconClass: 'stat-icon-emerald', shadow: 'shadow-emerald-100' },
-          { label: 'Teachers involved', value: new Set(assignments.map(a => a.teacherId)).size, icon: Users, iconClass: 'stat-icon-sky', shadow: 'shadow-sky-100' },
-          { label: 'Overloaded teachers', value: overloaded, icon: AlertTriangle, iconClass: overloaded ? 'stat-icon-rose' : 'stat-icon-teal', shadow: overloaded ? 'shadow-rose-100' : 'shadow-teal-100' },
-        ].map(stat => (
-          <div key={stat.label} className="bg-white rounded-2xl p-4 card-shadow card-interactive animate-fade-in-up flex items-center gap-3">
-            <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${stat.iconClass} shadow-md ${stat.shadow} shrink-0`}>
-              <stat.icon className="h-5 w-5 text-white" />
+          { label: 'Assignments', value: totalAssignments, icon: BookOpen, tone: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' },
+          { label: 'Periods/week', value: totalPeriods, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300' },
+          { label: 'Teachers involved', value: new Set(assignments.map((assignment) => assignment.teacherId)).size, icon: Users, tone: 'bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300' },
+          { label: 'Overloaded teachers', value: overloaded, icon: AlertTriangle, tone: overloaded ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' : 'bg-teal-50 text-teal-600 dark:bg-teal-500/15 dark:text-teal-300' },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${stat.tone}`}>
+              <stat.icon className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 leading-none">{stat.value}</div>
-              <div className="text-xs text-slate-500 mt-0.5">{stat.label}</div>
+              <div className="text-2xl font-bold leading-none text-slate-900 dark:text-slate-100">{stat.value}</div>
+              <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{stat.label}</div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Grade selector */}
-      <div className="flex items-center gap-2.5 mb-4">
-        <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Grade:</span>
-        <div className="flex gap-1.5 flex-wrap">
-          {GRADES.map(g => (
+      <div className="mb-4 flex flex-wrap items-center gap-2.5">
+        <span className="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Grade:</span>
+        <div className="flex flex-wrap gap-1.5">
+          {GRADES.map((grade) => (
             <button
-              key={g}
-              onClick={() => setSelectedGrade(g)}
-              className={`px-3.5 py-1.5 rounded-xl text-sm font-semibold transition-all duration-150 ${
-                selectedGrade === g
-                  ? 'text-white shadow-md shadow-indigo-200'
-                  : 'bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-200 hover:border-indigo-200'
+              key={grade}
+              onClick={() => setSelectedGrade(grade)}
+              className={`rounded-xl px-3.5 py-1.5 text-sm font-semibold transition-all duration-150 ${
+                selectedGrade === grade
+                  ? 'text-white shadow-md shadow-indigo-200 dark:shadow-none'
+                  : 'border border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-indigo-500/30 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300'
               }`}
-              style={selectedGrade === g ? { background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' } : undefined}
+              style={selectedGrade === grade ? { background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' } : undefined}
             >
-              {g}
+              {grade}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Assignment matrix */}
-      <Card className="border-0 card-shadow overflow-hidden bg-white rounded-2xl">
-        <CardHeader className="py-3.5 px-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-indigo-50/30">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <BookOpen className="h-4 w-4 text-indigo-500" />
-            Grade {selectedGrade} — Assignment Matrix
-            <span className="text-slate-400 font-normal ml-1">({gradeSections.length} sections × {gradeSubjectIds.length} subjects)</span>
+      <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-sm dark:bg-slate-900">
+        <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-indigo-50/30 px-5 py-3.5 dark:border-slate-800 dark:from-slate-900 dark:to-slate-900">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <BookOpen className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
+            Grade {selectedGrade} - Assignment Matrix
+            <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">
+              ({gradeSections.length} sections x {gradeSubjectIds.length} subjects)
+            </span>
           </CardTitle>
         </CardHeader>
+
         <CardContent className="p-0">
           {loading ? (
-            <div className="flex items-center justify-center py-20 text-slate-400 text-sm">Loading…</div>
+            <div className="flex items-center justify-center py-20 text-sm text-slate-400 dark:text-slate-500">Loading...</div>
           ) : gradeSubjectIds.length === 0 ? (
-            <div className="flex items-center justify-center py-20 text-slate-400 text-sm">No assignments found for grade {selectedGrade}</div>
+            <div className="flex items-center justify-center py-20 text-sm text-slate-400 dark:text-slate-500">
+              No assignments found for grade {selectedGrade}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-slate-50 border-b">
-                    <th className="text-left px-3 py-2.5 text-xs font-semibold text-slate-500 sticky left-0 bg-slate-50 z-10 min-w-[90px]">
+                  <tr className="border-b bg-slate-50 dark:border-slate-800 dark:bg-slate-950/60">
+                    <th className="sticky left-0 z-10 min-w-[90px] bg-slate-50 px-3 py-2.5 text-left text-xs font-semibold text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
                       Section
                     </th>
-                    {gradeSubjectIds.map(subjId => {
-                      const subj = subjects.find(s => s.id === subjId);
+                    {gradeSubjectIds.map((subjectId) => {
+                      const subject = subjects.find((item) => item.id === subjectId);
                       return (
-                        <th key={subjId} className="px-1.5 py-2 text-center min-w-[72px]">
-                          <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full inline-block ${CATEGORY_COLOUR[subj?.category ?? ''] ?? 'bg-slate-100 text-slate-600'}`}>
-                            {subj?.code ?? subj?.name.slice(0, 6) ?? ''}
+                        <th key={subjectId} className="min-w-[72px] px-1.5 py-2 text-center">
+                          <div className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${CATEGORY_COLOUR[subject?.category ?? ''] ?? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                            {subject?.code ?? subject?.name.slice(0, 6) ?? ''}
                           </div>
-                          <div className="text-[9px] text-slate-400 mt-0.5 font-normal leading-tight max-w-[68px] mx-auto truncate" title={subj?.name}>
-                            {subj?.name}
+                          <div
+                            className="mx-auto mt-0.5 max-w-[68px] truncate text-[9px] font-normal leading-tight text-slate-400 dark:text-slate-500"
+                            title={subject?.name}
+                          >
+                            {subject?.name}
                           </div>
                         </th>
                       );
                     })}
                   </tr>
                 </thead>
+
                 <tbody>
-                  {gradeSections.map((section, si) => {
+                  {gradeSections.map((section, sectionIndex) => {
                     const sectionAssignments = coverageMap[section.id] ?? {};
                     const assignedCount = Object.keys(sectionAssignments).length;
                     const totalNeeded = gradeSubjectIds.length;
                     const complete = assignedCount === totalNeeded;
 
                     return (
-                      <tr key={section.id} className={`border-b hover:bg-slate-50/50 transition ${si % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
-                        <td className="px-3 py-2 sticky left-0 bg-white border-r z-10">
-                          <div className="font-bold text-slate-800 text-xs">{section.name}</div>
-                          {section.stream && (
-                            <div className="text-[10px] text-slate-400">{section.stream}</div>
-                          )}
-                          <div className={`text-[9px] mt-0.5 ${complete ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      <tr
+                        key={section.id}
+                        className={`border-b transition hover:bg-slate-50/50 dark:border-slate-800 dark:hover:bg-slate-800/30 ${
+                          sectionIndex % 2 === 0 ? '' : 'bg-slate-50/30 dark:bg-slate-950/20'
+                        }`}
+                      >
+                        <td className="sticky left-0 z-10 border-r bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+                          <div className="text-xs font-bold text-slate-800 dark:text-slate-100">{section.name}</div>
+                          {section.stream ? (
+                            <div className="text-[10px] text-slate-400 dark:text-slate-500">{section.stream}</div>
+                          ) : null}
+                          <div className={`mt-0.5 text-[9px] ${complete ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}`}>
                             {assignedCount}/{totalNeeded}
                           </div>
                         </td>
-                        {gradeSubjectIds.map(subjId => {
-                          const a = sectionAssignments[subjId];
+
+                        {gradeSubjectIds.map((subjectId) => {
+                          const assignment = sectionAssignments[subjectId];
                           return (
-                            <td key={subjId} className="px-0.5 py-0.5">
+                            <td key={subjectId} className="px-0.5 py-0.5">
                               <AssignmentCell
-                                assignment={a}
-                                subjectName={subjects.find(s => s.id === subjId)?.name ?? ''}
-                                onEdit={(assignment, sid, sname) => openEditForCell(section, assignment, sid ?? subjId, sname)}
+                                assignment={assignment}
+                                subjectName={subjects.find((subject) => subject.id === subjectId)?.name ?? ''}
+                                onEdit={(currentAssignment, sid, subjectName) =>
+                                  openEditForCell(section, currentAssignment, sid ?? subjectId, subjectName)
+                                }
                               />
                             </td>
                           );
@@ -409,45 +430,61 @@ export default function AssignmentsPage() {
         </CardContent>
       </Card>
 
-      {/* Teacher workload panel */}
       <div className="mt-6">
-        <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-          <Users className="h-4 w-4 text-indigo-500" /> Teacher Workload — Grade {selectedGrade}
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <Users className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
+          Teacher Workload - Grade {selectedGrade}
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {teachers
-            .filter(t => assignments.some(a => a.teacherId === t.id))
+            .filter((teacher) => assignments.some((assignment) => assignment.teacherId === teacher.id))
             .sort((a, b) => {
               const aPct = a.targetWorkload > 0 ? a.assignedPeriods / a.targetWorkload : 0;
               const bPct = b.targetWorkload > 0 ? b.assignedPeriods / b.targetWorkload : 0;
               return bPct - aPct;
             })
-            .map(t => {
-              const pct = t.targetWorkload > 0 ? (t.assignedPeriods / t.targetWorkload) * 100 : 0;
+            .map((teacher) => {
+              const pct = teacher.targetWorkload > 0 ? (teacher.assignedPeriods / teacher.targetWorkload) * 100 : 0;
               const status = pct > 110 ? 'over' : pct >= 90 ? 'ok' : pct >= 60 ? 'light' : 'low';
+
               return (
-                <div key={t.id} className={`bg-white rounded-lg p-2.5 border shadow-sm text-xs ${
-                  status === 'over' ? 'border-red-200' : status === 'ok' ? 'border-emerald-200' : 'border-slate-100'
-                }`}>
+                <div
+                  key={teacher.id}
+                  className={`rounded-lg border bg-white p-2.5 text-xs shadow-sm dark:bg-slate-900 ${
+                    status === 'over'
+                      ? 'border-red-200 dark:border-red-500/30'
+                      : status === 'ok'
+                        ? 'border-emerald-200 dark:border-emerald-500/30'
+                        : 'border-slate-100 dark:border-slate-800'
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-1">
                     <div>
-                      <span className="font-bold text-slate-800">{t.abbreviation}</span>
-                      <span className="text-slate-400 ml-1">·</span>
-                      <span className="text-slate-500 ml-1">{t.department.slice(0, 8)}</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-100">{teacher.abbreviation}</span>
+                      <span className="ml-1 text-slate-400 dark:text-slate-500">·</span>
+                      <span className="ml-1 text-slate-500 dark:text-slate-400">{teacher.department.slice(0, 10)}</span>
                     </div>
-                    <Badge variant="outline" className={`text-[9px] px-1 py-0 ${
-                      status === 'over' ? 'border-red-300 text-red-600 bg-red-50' :
-                      status === 'ok' ? 'border-emerald-300 text-emerald-600 bg-emerald-50' :
-                      'border-slate-200 text-slate-500'
-                    }`}>
+                    <Badge
+                      variant="outline"
+                      className={`px-1 py-0 text-[9px] ${
+                        status === 'over'
+                          ? 'border-red-300 bg-red-50 text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300'
+                          : status === 'ok'
+                            ? 'border-emerald-300 bg-emerald-50 text-emerald-600 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300'
+                            : 'border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-300'
+                      }`}
+                    >
                       {status === 'over' ? 'Over' : status === 'ok' ? 'OK' : 'Light'}
                     </Badge>
                   </div>
+
                   <div className="mt-1.5">
-                    <WorkloadBar assigned={t.assignedPeriods} target={t.targetWorkload} />
+                    <WorkloadBar assigned={teacher.assignedPeriods} target={teacher.targetWorkload} />
                   </div>
-                  <div className="text-[9px] text-slate-400 mt-1">
-                    Grades: {t.teachableGrades.join(', ')}
+
+                  <div className="mt-1 text-[9px] text-slate-400 dark:text-slate-500">
+                    Grades: {teacher.teachableGrades.join(', ')}
                   </div>
                 </div>
               );
@@ -455,57 +492,80 @@ export default function AssignmentsPage() {
         </div>
       </div>
 
-      {/* Edit dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm dark:border-slate-800 dark:bg-slate-900">
           <DialogHeader>
-            <DialogTitle className="text-base">
+            <DialogTitle className="text-base text-slate-900 dark:text-slate-100">
               {editAssignment ? 'Change Teacher' : 'Assign Teacher'}
             </DialogTitle>
           </DialogHeader>
+
           <div className="space-y-4 py-2">
-            <div className="text-sm text-slate-600 bg-slate-50 rounded-lg p-3 space-y-1">
+            <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               <div><span className="font-medium">Section:</span> {editSection?.name ?? editAssignment?.section.name}</div>
               <div><span className="font-medium">Subject:</span> {editSubjectName}</div>
-              {editAssignment && (
-                <div><span className="font-medium">Current teacher:</span> {editAssignment.teacher.name} ({editAssignment.teacher.abbreviation})</div>
-              )}
-              {editAssignment && (
-                <div><span className="font-medium">Periods/week:</span> {editAssignment.periodsPerWeek}</div>
-              )}
+              {editAssignment ? (
+                <div>
+                  <span className="font-medium">Current teacher:</span> {editAssignment.teacher.name} ({editAssignment.teacher.abbreviation})
+                </div>
+              ) : null}
+              <div>
+                <span className="font-medium">Periods/week:</span> {editPeriodsPerWeek}
+              </div>
             </div>
+
+            {!editAssignment ? (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Periods per week
+                </label>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={editPeriodsPerWeek}
+                  onChange={(event) => setEditPeriodsPerWeek(event.target.value)}
+                />
+              </div>
+            ) : null}
+
             <div>
-              <label className="text-xs font-medium text-slate-600 mb-1.5 block">
+              <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
                 {editAssignment ? 'Replace with:' : 'Assign teacher:'}
               </label>
               <Select value={newTeacherId} onValueChange={setNewTeacherId} disabled={!editSubjectId}>
                 <SelectTrigger className="text-sm">
-                  <SelectValue placeholder="Select teacher…" />
+                  <SelectValue placeholder="Select teacher..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {editEligibleTeachers.map(t => {
-                    const pct = t.targetWorkload > 0 ? Math.round((t.assignedPeriods / t.targetWorkload) * 100) : 0;
+                  {editEligibleTeachers.map((teacher) => {
+                    const pct = teacher.targetWorkload > 0
+                      ? Math.round((teacher.assignedPeriods / teacher.targetWorkload) * 100)
+                      : 0;
                     return (
-                      <SelectItem key={t.id} value={t.id}>
-                        <span className="font-medium">{t.abbreviation}</span>
-                        <span className="text-slate-400 ml-1.5">— {t.name}</span>
-                        <span className={`ml-1.5 text-xs ${pct > 100 ? 'text-red-500' : pct > 80 ? 'text-amber-500' : 'text-emerald-600'}`}>
-                          ({t.assignedPeriods}/{t.targetWorkload})
-                        </span>
+                      <SelectItem key={teacher.id} value={teacher.id}>
+                        {teacher.abbreviation} - {teacher.name} ({teacher.assignedPeriods}/{teacher.targetWorkload})
+                        {pct > 100 ? ' overloaded' : pct > 80 ? ' busy' : ''}
                       </SelectItem>
                     );
                   })}
                 </SelectContent>
               </Select>
-              {editSubjectId && editEligibleTeachers.length === 0 && (
-                <p className="mt-1.5 text-xs text-amber-600">No eligible teachers found for this section and subject.</p>
-              )}
+
+              {editSubjectId && editEligibleTeachers.length === 0 ? (
+                <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-300">
+                  No eligible teachers found for this section and subject.
+                </p>
+              ) : null}
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={handleSave} disabled={saving || !newTeacherId}>
-              {saving ? 'Saving…' : editAssignment ? 'Update' : 'Assign'}
+            <Button variant="outline" size="sm" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => void handleSave()} disabled={saving || !newTeacherId}>
+              {saving ? 'Saving...' : editAssignment ? 'Update' : 'Assign'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { normalizeDateOnly } from '@/lib/substitute';
+import { removeSubstituteNoteEntry } from '@/lib/substitute-note';
 
 export async function GET(request: NextRequest) {
   try {
@@ -59,7 +60,44 @@ export async function DELETE(request: NextRequest) {
     if (!id || id.length > 128) {
       return NextResponse.json({ success: false, error: 'Valid id is required' }, { status: 400 });
     }
-    await db.teacherAbsence.delete({ where: { id } });
+    const absence = await db.teacherAbsence.findUnique({ where: { id } });
+    if (!absence) {
+      return NextResponse.json({ success: false, error: 'Absence not found' }, { status: 404 });
+    }
+
+    const normalized = normalizeDateOnly(absence.date);
+    const dateKey = [
+      normalized.getFullYear(),
+      String(normalized.getMonth() + 1).padStart(2, '0'),
+      String(normalized.getDate()).padStart(2, '0'),
+    ].join('-');
+    const day = await db.day.findUnique({
+      where: { name: normalized.toLocaleDateString('en-US', { weekday: 'long' }) },
+    });
+
+    await db.$transaction(async (tx) => {
+      if (day) {
+        const slots = await tx.timetableSlot.findMany({
+          where: {
+            dayId: day.id,
+            notes: { not: null },
+          },
+          select: { id: true, notes: true },
+        });
+
+        for (const slot of slots) {
+          const nextNotes = removeSubstituteNoteEntry(slot.notes, dateKey, absence.teacherId);
+          if (nextNotes !== (slot.notes ?? '')) {
+            await tx.timetableSlot.update({
+              where: { id: slot.id },
+              data: { notes: nextNotes || null },
+            });
+          }
+        }
+      }
+
+      await tx.teacherAbsence.delete({ where: { id } });
+    });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[teacher-absence] DELETE failed:', error);

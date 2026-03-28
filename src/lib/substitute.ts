@@ -1,14 +1,77 @@
 import { db } from '@/lib/db';
-import { getAllSlotTeacherIds, slotHasTeacherId } from '@/lib/combined-slot';
+import {
+  getAllSlotTeacherIds,
+  getCombinedSlotOptionForTeacher,
+  slotHasTeacherId,
+} from '@/lib/combined-slot';
+import {
+  getSubstituteNoteEntriesForDate,
+  getSubstituteNoteEntry,
+  upsertSubstituteNoteEntry,
+} from '@/lib/substitute-note';
 
-/**
- * Returns a local-midnight Date for the given input.
- * ISO strings like "2025-03-26" are parsed as local date parts (not UTC)
- * to avoid off-by-one errors when the server runs in UTC or UTC+offset.
- */
+type TeacherLite = {
+  id: string;
+  name: string;
+  abbreviation: string;
+  department?: string | null;
+};
+
+type SlotLike = {
+  id: string;
+  sectionId: string;
+  subjectId: string | null;
+  dayId: string;
+  timeSlotId: string;
+  notes?: string | null;
+  subject?: { id: string; name: string; code: string } | null;
+  teacher?: { id: string; name: string; abbreviation: string; department?: string | null } | null;
+  day?: { name: string } | null;
+  timeSlot?: { periodNumber: number } | null;
+  section?: { name: string; grade: { name: string } } | null;
+};
+
+const WEIGHTS = {
+  SAME_DEPARTMENT: 30,
+  DIRECT_SUBJECT_TEACHER: 25,
+  TEACHABLE_GRADE: 20,
+  LOW_WORKLOAD: 20,
+  NOT_HOD: 10,
+};
+
+export interface ScoredCandidate {
+  id: string;
+  name: string;
+  abbreviation: string;
+  score: number;
+  reasons: string[];
+}
+
+export interface SuggestedSlot {
+  slotId: string;
+  timeSlotId: string;
+  periodNumber: number;
+  dayName: string;
+  sectionName: string;
+  sectionId: string;
+  subjectName: string;
+  subjectCode: string;
+  subjectId: string | null;
+  currentTeacher: { id: string; name: string; abbreviation: string } | null;
+  assignedSubstitute: { id: string; name: string; abbreviation: string } | null;
+  suggestions: ScoredCandidate[];
+  topPick: ScoredCandidate | null;
+}
+
+export interface DailySubstituteAbsence {
+  absenceId: string;
+  reason?: string | null;
+  teacher: { id: string; name: string; abbreviation: string };
+  slots: SuggestedSlot[];
+}
+
 export function normalizeDateOnly(input: string | Date): Date {
   if (typeof input === 'string') {
-    // Strip time component and parse as local YYYY-MM-DD
     const datePart = input.split('T')[0];
     const [y, m, d] = datePart.split('-').map(Number);
     if (y && m && d) return new Date(y, m - 1, d);
@@ -17,7 +80,15 @@ export function normalizeDateOnly(input: string | Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-function getDayName(date: Date): string {
+export function dateKey(input: string | Date) {
+  const d = normalizeDateOnly(input);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getDayName(date: Date) {
   return date.toLocaleDateString('en-US', { weekday: 'long' });
 }
 
@@ -42,189 +113,199 @@ function buildTeacherSlotCountMap(
   );
 }
 
-// ─── Scoring criteria weights ───────────────────────────────────────────────
-const WEIGHTS = {
-  SAME_DEPARTMENT: 30,      // same dept → likely domain expert
-  DIRECT_SUBJECT_TEACHER: 25, // already teaches this subject to this section
-  TEACHABLE_GRADE: 20,      // grade level within teacher's range
-  LOW_WORKLOAD: 20,         // underloaded teachers preferred (linear scale)
-  NOT_HOD: 10,              // avoid burdening HODs
-  ACTIVE_TEACHER: 5,        // bonus for active (already filtered, just explicit)
-};
-
-export interface ScoredCandidate {
-  id: string;
-  name: string;
-  abbreviation: string;
-  score: number;
-  reasons: string[];
+function resolveSlotContext(slot: SlotLike, absentTeacher: TeacherLite) {
+  const combinedOption = getCombinedSlotOptionForTeacher(slot.notes, absentTeacher.id);
+  return {
+    subjectId: combinedOption?.subjectId ?? slot.subjectId ?? null,
+    subjectName: combinedOption?.subjectName ?? slot.subject?.name ?? '',
+    subjectCode: combinedOption?.subjectCode ?? slot.subject?.code ?? '',
+    absentTeacher,
+  };
 }
 
-export interface SuggestedSlot {
-  slotId: string;
-  timeSlotId: string;
-  periodNumber: number;
-  dayName: string;
-  sectionName: string;
-  sectionId: string;
-  subjectName: string;
-  subjectId: string | null;
-  currentTeacher: { id: string; name: string; abbreviation: string } | null;
-  suggestions: ScoredCandidate[];
-  topPick: ScoredCandidate | null;
-}
-
-// ─── Core suggestion engine ──────────────────────────────────────────────────
-
-export async function suggestSubstitutes(teacherId: string, dateInput: string | Date) {
+async function getSubstituteEngineContext(dateInput: string | Date) {
   const date = normalizeDateOnly(dateInput);
   const dayName = getDayName(date);
+  const key = dateKey(date);
   const day = await db.day.findUnique({ where: { name: dayName } });
-  if (!day) return { date, dayName, slots: [] as SuggestedSlot[] };
 
-  // Slots belonging to the absent teacher on this day
-  const absentSlots = (await db.timetableSlot.findMany({
-    where: { dayId: day.id },
-    include: {
-      section: { include: { grade: true } },
-      subject: true,
-      teacher: true,
-      day: true,
-      timeSlot: true,
-      room: true,
-    },
-    orderBy: { timeSlot: { periodNumber: 'asc' } },
-  })).filter((slot) => slotHasTeacherId(slot, teacherId));
+  const [scheduledSlots, absencesToday, unavailabilityToday, teachers] = await Promise.all([
+    day
+      ? db.timetableSlot.findMany({
+          where: { dayId: day.id },
+          include: {
+            section: { include: { grade: true } },
+            subject: true,
+            teacher: true,
+            day: true,
+            timeSlot: true,
+          },
+          orderBy: { timeSlot: { periodNumber: 'asc' } },
+        })
+      : Promise.resolve([]),
+    db.teacherAbsence.findMany({
+      where: { date },
+      include: { teacher: { select: { id: true, name: true, abbreviation: true, department: true } } },
+      orderBy: { createdAt: 'asc' },
+    }),
+    day
+      ? db.teacherUnavailability.findMany({
+          where: { dayId: day.id },
+          select: { teacherId: true, timeSlotId: true },
+        })
+      : Promise.resolve([]),
+    db.teacher.findMany({
+      select: {
+        id: true,
+        name: true,
+        abbreviation: true,
+        department: true,
+        isHOD: true,
+        targetWorkload: true,
+        currentWorkload: true,
+        teachableGrades: true,
+        isActive: true,
+      },
+      orderBy: { name: 'asc' },
+    }),
+  ]);
 
-  // All teachers that can teach any of those subjects
-  const subjectIds = absentSlots.map(s => s.subjectId).filter((v): v is string => !!v);
+  const absentToday = new Set(absencesToday.map((absence) => absence.teacherId));
+  const unavailableSet = new Set(unavailabilityToday.map((item) => `${item.teacherId}|${item.timeSlotId}`));
+  const liveTeacherWorkload = buildTeacherSlotCountMap(scheduledSlots);
+  const teacherBusy = new Set<string>();
+
+  for (const slot of scheduledSlots) {
+    for (const teacherId of getAllSlotTeacherIds(slot)) {
+      if (teacherId) teacherBusy.add(`${teacherId}|${slot.timeSlotId}`);
+    }
+    for (const substituteEntry of getSubstituteNoteEntriesForDate(slot.notes, key)) {
+      teacherBusy.add(`${substituteEntry.substituteTeacherId}|${slot.timeSlotId}`);
+    }
+  }
+
+  return {
+    date,
+    dateKey: key,
+    day,
+    dayName,
+    scheduledSlots,
+    absencesToday,
+    absentToday,
+    unavailableSet,
+    teacherBusy,
+    liveTeacherWorkload,
+    teachers,
+  };
+}
+
+export async function suggestSubstitutes(teacherId: string, dateInput: string | Date) {
+  const context = await getSubstituteEngineContext(dateInput);
+  const absentTeacher = context.absencesToday.find((absence) => absence.teacherId === teacherId)?.teacher
+    ?? await db.teacher.findUnique({
+      where: { id: teacherId },
+      select: { id: true, name: true, abbreviation: true, department: true },
+    });
+
+  if (!context.day || !absentTeacher) {
+    return { date: context.date, dayName: context.dayName, slots: [] as SuggestedSlot[] };
+  }
+
+  const absentSlots = context.scheduledSlots.filter((slot) => slotHasTeacherId(slot, teacherId));
+  const resolvedSlots = absentSlots.map((slot) => ({
+    slot,
+    context: resolveSlotContext(slot, absentTeacher),
+  }));
+
+  const subjectIds = resolvedSlots
+    .map((item) => item.context.subjectId)
+    .filter((value): value is string => Boolean(value));
+
   const teacherSubjectMaps = await db.teacherSubject.findMany({
     where: { subjectId: { in: subjectIds } },
     include: {
       teacher: {
         select: {
-          id: true, name: true, abbreviation: true,
-          department: true, isHOD: true,
-          targetWorkload: true, currentWorkload: true,
-          teachableGrades: true, isActive: true,
+          id: true,
+          name: true,
+          abbreviation: true,
+          department: true,
+          isHOD: true,
+          targetWorkload: true,
+          currentWorkload: true,
+          teachableGrades: true,
+          isActive: true,
         },
       },
     },
   });
 
-  // Who's busy this day (period × teacher)
-  const scheduledSlots = await db.timetableSlot.findMany({
-    select: { teacherId: true, labTeacherId: true, notes: true, dayId: true, timeSlotId: true },
-  });
-  const liveTeacherWorkload = buildTeacherSlotCountMap(scheduledSlots);
-  const teacherBusy = new Set(
-    scheduledSlots
-      .filter((slot) => slot.dayId === day.id)
-      .flatMap((slot) =>
-        getAllSlotTeacherIds(slot)
-          .filter((busyTeacherId): busyTeacherId is string => Boolean(busyTeacherId))
-          .map((busyTeacherId) => `${busyTeacherId}|${slot.timeSlotId}`)
-      )
-  );
-
-  // Who's absent today
-  const absencesToday = await db.teacherAbsence.findMany({
-    where: { date },
-    select: { teacherId: true },
-  });
-  const absentToday = new Set(absencesToday.map(a => a.teacherId));
-
-  // Who's marked unavailable for specific periods today
-  const unavailabilityToday = await db.teacherUnavailability.findMany({
-    where: { dayId: day.id },
-    select: { teacherId: true, timeSlotId: true },
-  });
-  const unavailableSet = new Set(unavailabilityToday.map(u => `${u.teacherId}|${u.timeSlotId}`));
-
-  // Build subject → candidates map
-  const subjectCandidates = new Map<string, typeof teacherSubjectMaps[0]['teacher'][]>();
-  for (const ts of teacherSubjectMaps) {
-    if (!subjectCandidates.has(ts.subjectId)) subjectCandidates.set(ts.subjectId, []);
-    const list = subjectCandidates.get(ts.subjectId)!;
-    if (!list.some(t => t.id === ts.teacherId)) {
+  const subjectCandidates = new Map<string, typeof teacherSubjectMaps[number]['teacher'][]>();
+  for (const mapping of teacherSubjectMaps) {
+    if (!subjectCandidates.has(mapping.subjectId)) subjectCandidates.set(mapping.subjectId, []);
+    const list = subjectCandidates.get(mapping.subjectId)!;
+    if (!list.some((teacher) => teacher.id === mapping.teacherId)) {
       list.push({
-        ...ts.teacher,
-        currentWorkload: liveTeacherWorkload.get(ts.teacherId) ?? 0,
+        ...mapping.teacher,
+        currentWorkload: context.liveTeacherWorkload.get(mapping.teacherId) ?? mapping.teacher.currentWorkload,
       });
     }
   }
 
-  // Direct assignments: subject+section → teacher (strongest match)
-  const directAssignments = new Map<string, string>(); // `${subjectId}|${sectionId}` → teacherId
-  for (const ts of teacherSubjectMaps) {
-    directAssignments.set(`${ts.subjectId}|${ts.sectionId}`, ts.teacherId);
+  const directAssignments = new Map<string, string>();
+  for (const mapping of teacherSubjectMaps) {
+    directAssignments.set(`${mapping.subjectId}|${mapping.sectionId}`, mapping.teacherId);
   }
 
-  const slots: SuggestedSlot[] = absentSlots.map(slot => {
-    const subjectId = slot.subjectId;
-    const sectionId = slot.sectionId;
-    const gradeName = slot.section.grade.name; // e.g. "IX"
-    const rawCandidates = subjectId ? (subjectCandidates.get(subjectId) ?? []) : [];
-
-    const eligible = rawCandidates.filter(candidate => {
-      if (candidate.id === teacherId) return false;          // absent teacher
-      if (!candidate.isActive) return false;                 // inactive
-      if (absentToday.has(candidate.id)) return false;      // also absent
-      if (teacherBusy.has(`${candidate.id}|${slot.timeSlotId}`)) return false; // busy this period
-      if (unavailableSet.has(`${candidate.id}|${slot.timeSlotId}`)) return false; // unavailable
+  const slots: SuggestedSlot[] = resolvedSlots.map(({ slot, context: slotContext }) => {
+    const rawCandidates = slotContext.subjectId ? (subjectCandidates.get(slotContext.subjectId) ?? []) : [];
+    const assignedEntry = getSubstituteNoteEntry(slot.notes, context.dateKey, teacherId);
+    const eligible = rawCandidates.filter((candidate) => {
+      if (candidate.id === teacherId) return false;
+      if (!candidate.isActive) return false;
+      if (context.absentToday.has(candidate.id)) return false;
+      if (assignedEntry?.substituteTeacherId !== candidate.id && context.teacherBusy.has(`${candidate.id}|${slot.timeSlotId}`)) return false;
+      if (context.unavailableSet.has(`${candidate.id}|${slot.timeSlotId}`)) return false;
       return true;
     });
 
-    // Score each eligible candidate
-    const scored: ScoredCandidate[] = eligible.map(candidate => {
+    const scored = eligible.map((candidate) => {
       let score = 0;
       const reasons: string[] = [];
 
-      // Criteria 1: same department
-      const absentTeacherDept = slot.teacher?.department ?? '';
-      // We'll compare against the absent teacher's dept only if known
-      // Actually for subject matching we compare candidate's dept to subject category (a proxy)
-      // Better: use the absent teacher's department
-      // We need the absent teacher's department — fetch from slot.teacher
-      // This is available via slot.teacher which is included
-
-      // Criteria 2: direct subject+section assignment (strongest match)
-      if (directAssignments.get(`${subjectId}|${sectionId}`) === candidate.id) {
+      if (slotContext.subjectId && directAssignments.get(`${slotContext.subjectId}|${slot.sectionId}`) === candidate.id) {
         score += WEIGHTS.DIRECT_SUBJECT_TEACHER;
         reasons.push('Direct assignment for this class');
       }
 
-      // Criteria 1: department match (compare to absent teacher's department)
-      if (absentTeacherDept && candidate.department === absentTeacherDept) {
+      if (absentTeacher.department && candidate.department === absentTeacher.department) {
         score += WEIGHTS.SAME_DEPARTMENT;
         reasons.push('Same department');
       }
 
-      // Criteria 3: teachable grade
       try {
         const teachableGrades: string[] = JSON.parse(candidate.teachableGrades || '[]');
-        if (teachableGrades.includes(gradeName)) {
+        if (slot.section?.grade?.name && teachableGrades.includes(slot.section.grade.name)) {
           score += WEIGHTS.TEACHABLE_GRADE;
-          reasons.push(`Teaches Grade ${gradeName}`);
+          reasons.push(`Teaches Grade ${slot.section.grade.name}`);
         }
-      } catch { /* ignore parse errors */ }
+      } catch {
+        // Ignore malformed teachable-grade payloads.
+      }
 
-      // Criteria 4: lower workload (favour underloaded, linear scale)
-      const candidateWorkload = liveTeacherWorkload.get(candidate.id) ?? candidate.currentWorkload;
+      const candidateWorkload = context.liveTeacherWorkload.get(candidate.id) ?? candidate.currentWorkload;
       if (candidate.targetWorkload > 0) {
         const ratio = candidateWorkload / candidate.targetWorkload;
-        // ratio 0 → full 20 pts; ratio 1 → 0 pts; ratio > 1 → negative (overloaded)
         const workloadScore = Math.round(WEIGHTS.LOW_WORKLOAD * Math.max(0, 1 - ratio));
         if (workloadScore > 0) {
           score += workloadScore;
           reasons.push(`Low workload (${candidateWorkload}/${candidate.targetWorkload})`);
         } else if (ratio > 1) {
-          score -= 5; // slight penalty for overloaded
+          score -= 5;
           reasons.push('Overloaded');
         }
       }
 
-      // Criteria 5: not HOD
       if (!candidate.isHOD) {
         score += WEIGHTS.NOT_HOD;
         reasons.push('Not HOD');
@@ -232,41 +313,204 @@ export async function suggestSubstitutes(teacherId: string, dateInput: string | 
         reasons.push('HOD (lower priority)');
       }
 
-      return { id: candidate.id, name: candidate.name, abbreviation: candidate.abbreviation, score, reasons };
-    });
-
-    // Sort by score descending
-    scored.sort((a, b) => b.score - a.score);
+      return {
+        id: candidate.id,
+        name: candidate.name,
+        abbreviation: candidate.abbreviation,
+        score,
+        reasons,
+      };
+    }).sort((a, b) => b.score - a.score);
 
     return {
       slotId: slot.id,
       timeSlotId: slot.timeSlotId,
-      periodNumber: slot.timeSlot.periodNumber,
-      dayName: slot.day.name,
-      sectionName: slot.section.name,
+      periodNumber: slot.timeSlot?.periodNumber ?? 0,
+      dayName: slot.day?.name ?? context.dayName,
+      sectionName: slot.section?.name ?? '',
       sectionId: slot.sectionId,
-      subjectName: slot.subject?.name ?? '',
-      subjectId,
-      currentTeacher: slot.teacher
-        ? { id: slot.teacher.id, name: slot.teacher.name, abbreviation: slot.teacher.abbreviation }
+      subjectName: slotContext.subjectName,
+      subjectCode: slotContext.subjectCode,
+      subjectId: slotContext.subjectId,
+      currentTeacher: {
+        id: absentTeacher.id,
+        name: absentTeacher.name,
+        abbreviation: absentTeacher.abbreviation,
+      },
+      assignedSubstitute: assignedEntry
+        ? {
+            id: assignedEntry.substituteTeacherId,
+            name: assignedEntry.substituteTeacherName,
+            abbreviation: assignedEntry.substituteTeacherAbbreviation,
+          }
         : null,
       suggestions: scored,
       topPick: scored[0] ?? null,
     };
   });
 
-  return { date, dayName, slots };
+  return { date: context.date, dayName: context.dayName, slots };
 }
 
-// ─── Auto-assign: pick best available substitute for every slot ──────────────
+export async function getDailySubstitutePlan(dateInput: string | Date) {
+  const context = await getSubstituteEngineContext(dateInput);
+  const absences = await Promise.all(
+    context.absencesToday.map(async (absence) => {
+      const suggestionResult = await suggestSubstitutes(absence.teacherId, context.date);
+      return {
+        absenceId: absence.id,
+        reason: absence.reason,
+        teacher: {
+          id: absence.teacher.id,
+          name: absence.teacher.name,
+          abbreviation: absence.teacher.abbreviation,
+        },
+        slots: suggestionResult.slots,
+      } satisfies DailySubstituteAbsence;
+    })
+  );
+
+  return {
+    date: context.date,
+    dateKey: context.dateKey,
+    dayName: context.dayName,
+    absences,
+  };
+}
+
+export async function assignSubstituteToSlot(args: {
+  slotId: string;
+  absentTeacherId: string;
+  substituteTeacherId: string;
+  date: string | Date;
+  mode: 'manual' | 'auto';
+}) {
+  const normalizedDate = normalizeDateOnly(args.date);
+  const normalizedDateKey = dateKey(normalizedDate);
+  const dayName = getDayName(normalizedDate);
+
+  const [absentTeacher, substituteTeacher, day] = await Promise.all([
+    db.teacher.findUnique({
+      where: { id: args.absentTeacherId },
+      select: { id: true, name: true, abbreviation: true, department: true },
+    }),
+    db.teacher.findUnique({
+      where: { id: args.substituteTeacherId },
+      select: { id: true, name: true, abbreviation: true },
+    }),
+    db.day.findUnique({ where: { name: dayName } }),
+  ]);
+
+  if (!absentTeacher || !substituteTeacher || !day) {
+    throw new Error('Invalid substitute assignment request');
+  }
+
+  const updated = await db.$transaction(async (tx) => {
+    const currentSlot = await tx.timetableSlot.findUnique({
+      where: { id: args.slotId },
+      include: {
+        subject: true,
+        teacher: true,
+        day: true,
+        timeSlot: true,
+        section: { include: { grade: true } },
+      },
+    });
+
+    if (!currentSlot) throw new Error('Slot not found');
+    if (currentSlot.dayId !== day.id) throw new Error('Selected date does not match this timetable slot');
+    if (!slotHasTeacherId(currentSlot, absentTeacher.id)) {
+      throw new Error('Absent teacher is not assigned to this slot');
+    }
+
+    const slotContext = resolveSlotContext(currentSlot, absentTeacher);
+    if (!slotContext.subjectId) {
+      throw new Error('Cannot assign a substitute to a slot without a subject');
+    }
+
+    const mapping = await tx.teacherSubject.findFirst({
+      where: {
+        teacherId: substituteTeacher.id,
+        subjectId: slotContext.subjectId,
+      },
+    });
+    if (!mapping) {
+      throw new Error('Substitute teacher does not teach this subject');
+    }
+
+    const busyCandidates = await tx.timetableSlot.findMany({
+      where: {
+        dayId: currentSlot.dayId,
+        timeSlotId: currentSlot.timeSlotId,
+      },
+      select: {
+        id: true,
+        teacherId: true,
+        labTeacherId: true,
+        notes: true,
+      },
+    });
+
+    const substituteBusy = busyCandidates.some((candidate) => {
+      if (candidate.id !== currentSlot.id && slotHasTeacherId(candidate, substituteTeacher.id)) return true;
+      return getSubstituteNoteEntriesForDate(candidate.notes, normalizedDateKey).some((entry) =>
+        entry.absentTeacherId !== absentTeacher.id && entry.substituteTeacherId === substituteTeacher.id
+      );
+    });
+    if (substituteBusy) {
+      throw new Error('Substitute teacher is already booked in this period');
+    }
+
+    const nextNotes = upsertSubstituteNoteEntry(currentSlot.notes, {
+      date: normalizedDateKey,
+      absentTeacherId: absentTeacher.id,
+      absentTeacherName: absentTeacher.name,
+      absentTeacherAbbreviation: absentTeacher.abbreviation,
+      substituteTeacherId: substituteTeacher.id,
+      substituteTeacherName: substituteTeacher.name,
+      substituteTeacherAbbreviation: substituteTeacher.abbreviation,
+      subjectId: slotContext.subjectId,
+      subjectName: slotContext.subjectName,
+      subjectCode: slotContext.subjectCode,
+      mode: args.mode,
+    });
+
+    const saved = await tx.timetableSlot.update({
+      where: { id: currentSlot.id },
+      data: {
+        notes: nextNotes,
+      },
+      include: {
+        day: true,
+        timeSlot: true,
+        subject: true,
+        teacher: true,
+        section: true,
+        room: true,
+      },
+    });
+
+    await tx.teacherAbsence.upsert({
+      where: { teacherId_date: { teacherId: absentTeacher.id, date: normalizedDate } },
+      update: {},
+      create: { teacherId: absentTeacher.id, date: normalizedDate },
+    });
+
+    return {
+      slot: saved,
+      assigned: {
+        id: substituteTeacher.id,
+        name: substituteTeacher.name,
+        abbreviation: substituteTeacher.abbreviation,
+      },
+    };
+  });
+
+  return updated;
+}
 
 export async function autoAssignSubstitutes(teacherId: string, dateInput: string | Date) {
   const { date, dayName, slots } = await suggestSubstitutes(teacherId, dateInput);
-
-  // Track in-memory period locks so we don't double-book within this batch
-  // key: `${candidateId}|${timeSlotId}`
-  const inMemoryBusy = new Set<string>();
-
   const results: Array<{
     slotId: string;
     periodNumber: number;
@@ -275,77 +519,48 @@ export async function autoAssignSubstitutes(teacherId: string, dateInput: string
     assigned: ScoredCandidate | null;
     error: string | null;
   }> = [];
+  const inMemoryBusy = new Set<string>();
 
   for (const slot of slots) {
+    if (slot.assignedSubstitute) {
+      results.push({
+        slotId: slot.slotId,
+        periodNumber: slot.periodNumber,
+        sectionName: slot.sectionName,
+        subjectName: slot.subjectName,
+        assigned: {
+          id: slot.assignedSubstitute.id,
+          name: slot.assignedSubstitute.name,
+          abbreviation: slot.assignedSubstitute.abbreviation,
+          score: 0,
+          reasons: ['Already assigned'],
+        },
+        error: null,
+      });
+      inMemoryBusy.add(`${slot.assignedSubstitute.id}|${slot.timeSlotId}`);
+      continue;
+    }
+
     let assigned: ScoredCandidate | null = null;
     let error = 'No available substitute found';
 
     for (const candidate of slot.suggestions) {
       if (inMemoryBusy.has(`${candidate.id}|${slot.timeSlotId}`)) continue;
-
       try {
-        const assignment = await db.$transaction(async (tx) => {
-          const currentSlot = await tx.timetableSlot.findUnique({
-            where: { id: slot.slotId },
-            select: { id: true, teacherId: true, dayId: true, timeSlotId: true },
-          });
-
-          if (!currentSlot) return { ok: false as const, reason: 'missing' as const };
-          if (currentSlot.teacherId !== teacherId) {
-            return { ok: false as const, reason: 'already-reassigned' as const };
-          }
-
-          const busyConflict = await tx.timetableSlot.findFirst({
-            where: {
-              OR: [
-                { teacherId: candidate.id },
-                { labTeacherId: candidate.id },
-              ],
-              dayId: currentSlot.dayId,
-              timeSlotId: currentSlot.timeSlotId,
-              NOT: { id: currentSlot.id },
-            },
-            select: { id: true },
-          });
-
-          if (busyConflict) return { ok: false as const, reason: 'busy' as const };
-
-          await tx.timetableSlot.update({
-            where: { id: slot.slotId },
-            data: {
-              teacherId: candidate.id,
-              manuallyEdited: true,
-              notes: 'Substituted (auto-assign)',
-            },
-          });
-
-          await tx.teacherAbsence.upsert({
-            where: { teacherId_date: { teacherId, date } },
-            update: {},
-            create: { teacherId, date },
-          });
-
-          return { ok: true as const };
+        await assignSubstituteToSlot({
+          slotId: slot.slotId,
+          absentTeacherId: teacherId,
+          substituteTeacherId: candidate.id,
+          date,
+          mode: 'auto',
         });
-
-        if (assignment.ok) {
-          inMemoryBusy.add(`${candidate.id}|${slot.timeSlotId}`);
-          assigned = candidate;
-          error = '';
-          break;
-        }
-
-        if (assignment.reason === 'busy') {
-          continue;
-        }
-
-        error = assignment.reason === 'already-reassigned'
-          ? 'Slot was already reassigned'
-          : 'Slot no longer exists';
+        inMemoryBusy.add(`${candidate.id}|${slot.timeSlotId}`);
+        assigned = candidate;
+        error = '';
         break;
-      } catch {
-        error = 'Database error during assignment';
-        break;
+      } catch (err) {
+        error = (err as Error)?.message || 'Database error during assignment';
+        if (error.includes('already booked')) continue;
       }
     }
 
@@ -360,4 +575,88 @@ export async function autoAssignSubstitutes(teacherId: string, dateInput: string
   }
 
   return { date, dayName, results };
+}
+
+export async function autoAssignDailySubstitutes(dateInput: string | Date, teacherIds?: string[]) {
+  const plan = await getDailySubstitutePlan(dateInput);
+  const inMemoryBusy = new Set<string>();
+  const results: Array<{
+    absentTeacherId: string;
+    slotId: string;
+    periodNumber: number;
+    sectionName: string;
+    subjectName: string;
+    assigned: ScoredCandidate | null;
+    error: string | null;
+  }> = [];
+
+  const targetAbsences = plan.absences.filter((absence) =>
+    !teacherIds || teacherIds.length === 0 || teacherIds.includes(absence.teacher.id)
+  );
+
+  const flattened = targetAbsences
+    .flatMap((absence) =>
+      absence.slots.map((slot) => ({
+        absence,
+        slot,
+      }))
+    )
+    .sort((a, b) => a.slot.periodNumber - b.slot.periodNumber || a.slot.sectionName.localeCompare(b.slot.sectionName));
+
+  for (const item of flattened) {
+    if (item.slot.assignedSubstitute) {
+      inMemoryBusy.add(`${item.slot.assignedSubstitute.id}|${item.slot.timeSlotId}`);
+      results.push({
+        absentTeacherId: item.absence.teacher.id,
+        slotId: item.slot.slotId,
+        periodNumber: item.slot.periodNumber,
+        sectionName: item.slot.sectionName,
+        subjectName: item.slot.subjectName,
+        assigned: {
+          id: item.slot.assignedSubstitute.id,
+          name: item.slot.assignedSubstitute.name,
+          abbreviation: item.slot.assignedSubstitute.abbreviation,
+          score: 0,
+          reasons: ['Already assigned'],
+        },
+        error: null,
+      });
+      continue;
+    }
+
+    let assigned: ScoredCandidate | null = null;
+    let error = 'No available substitute found';
+
+    for (const candidate of item.slot.suggestions) {
+      if (inMemoryBusy.has(`${candidate.id}|${item.slot.timeSlotId}`)) continue;
+      try {
+        await assignSubstituteToSlot({
+          slotId: item.slot.slotId,
+          absentTeacherId: item.absence.teacher.id,
+          substituteTeacherId: candidate.id,
+          date: plan.date,
+          mode: 'auto',
+        });
+        inMemoryBusy.add(`${candidate.id}|${item.slot.timeSlotId}`);
+        assigned = candidate;
+        error = '';
+        break;
+      } catch (err) {
+        error = (err as Error)?.message || 'Database error during assignment';
+        if (error.includes('already booked')) continue;
+      }
+    }
+
+    results.push({
+      absentTeacherId: item.absence.teacher.id,
+      slotId: item.slot.slotId,
+      periodNumber: item.slot.periodNumber,
+      sectionName: item.slot.sectionName,
+      subjectName: item.slot.subjectName,
+      assigned,
+      error: assigned ? null : error,
+    });
+  }
+
+  return { ...plan, results };
 }

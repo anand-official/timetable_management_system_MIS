@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { GraduationCap, Lock, ArrowRight } from 'lucide-react';
@@ -52,30 +51,26 @@ export default async function AuthPage({
       <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-violet-400/10 blur-3xl pointer-events-none" />
 
       {/* Card */}
-      <div className="relative w-full max-w-md animate-scale-in">
+      <div className="relative w-full max-w-lg animate-scale-in">
         {/* Logo + School name */}
         <div className="flex flex-col items-center mb-8">
           <div className="relative mb-4">
-            <div
-              className="h-20 w-20 rounded-2xl flex items-center justify-center shadow-xl overflow-hidden"
-              style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
-            >
-              <Image
-                src="/logo.svg"
+            <div className="h-52 w-52 rounded-[2.25rem] flex items-center justify-center shadow-2xl overflow-hidden bg-white border border-white/90 p-0.5">
+              <img
+                src="/auth-logo.png"
                 alt="Modern Indian School"
-                width={80}
-                height={80}
-                priority
-                className="h-full w-full object-contain p-2"
+                width={208}
+                height={208}
+                className="h-full w-full object-contain"
               />
             </div>
             {/* Glow ring */}
-            <div className="absolute inset-0 rounded-2xl ring-4 ring-indigo-200/60 scale-110 pointer-events-none" />
+            <div className="absolute inset-0 rounded-[2.25rem] ring-4 ring-indigo-200/60 scale-110 pointer-events-none" />
           </div>
-          <h1 className="text-xl font-bold text-slate-900 text-center leading-tight">
+          <h1 className="text-2xl font-bold text-slate-900 text-center leading-tight">
             Modern Indian School
           </h1>
-          <p className="text-sm text-slate-500 mt-1 font-medium tracking-wide">
+          <p className="text-base text-slate-500 mt-1 font-medium tracking-wide">
             Timetable Management System · 2026–27
           </p>
         </div>
@@ -88,7 +83,7 @@ export default async function AuthPage({
             style={{ background: 'linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa)' }}
           />
 
-          <div className="px-8 pt-7 pb-8">
+          <div className="px-8 pt-7 pb-8 md:px-10 md:pt-8 md:pb-9">
             <div className="mb-6">
               <h2 className="text-lg font-bold text-slate-900">Welcome back</h2>
               <p className="text-sm text-slate-500 mt-0.5">

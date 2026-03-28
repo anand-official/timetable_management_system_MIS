@@ -4,7 +4,9 @@
  */
 
 import {
+  getCombinedSlotBucket,
   getCombinedSlotDisplay,
+  getCombinedSlotDisplayForTeacher,
   getSlotTeacherAbbreviations,
 } from '@/lib/combined-slot';
 import {
@@ -86,13 +88,17 @@ function teacherAbbreviationLabel(slot: RawSlot) {
   return getSlotTeacherAbbreviations(slot).join(' + ');
 }
 
-function subjectCodeLabel(slot: RawSlot): string {
-  const combinedDisplay = getCombinedSlotDisplay(slot.notes);
+function subjectCodeLabel(slot: RawSlot, teacherId?: string): string {
+  const combinedDisplay =
+    (teacherId ? getCombinedSlotDisplayForTeacher(slot.notes, teacherId) : null) ??
+    getCombinedSlotDisplay(slot.notes);
   if (slot.isWE) return 'W.E.';
   return combinedDisplay?.code ?? slot.subject?.code ?? slot.subject?.name ?? '-';
 }
 
 function slotTypeLabel(slot: RawSlot): string | undefined {
+  const combinedBucket = getCombinedSlotBucket(slot.notes);
+  if (combinedBucket) return combinedBucket;
   if (slot.isLab) return 'Lab';
   if (slot.isGames) return 'Games';
   if (slot.isYoga) return 'Yoga';
@@ -106,9 +112,9 @@ function formatTimeRange(startTime: string, endTime: string) {
   return `${startTime}-${endTime}`;
 }
 
-function makeCell(slot: RawSlot, line2: string, line3?: string): CellData {
+function makeCell(slot: RawSlot, line2: string, line3?: string, teacherId?: string): CellData {
   return {
-    line1: subjectCodeLabel(slot),
+    line1: subjectCodeLabel(slot, teacherId),
     line2,
     line3,
     isLab: slot.isLab ?? false,
@@ -182,6 +188,7 @@ export function buildClassGrid(
 export function buildTeacherGrid(
   teacherName: string,
   teacherAbbr: string,
+  teacherId: string,
   slots: RawSlot[],
   days: DayInfo[],
   periods: PeriodInfo[],
@@ -204,7 +211,7 @@ export function buildTeacherGrid(
       const group = slotMap.get(`${day.id}|${period.periodNumber}`);
       if (!group || group.length === 0) return null;
       const subjectLabel = Array.from(
-        new Set(group.map((slot) => subjectCodeLabel(slot)).filter(Boolean))
+        new Set(group.map((slot) => subjectCodeLabel(slot, teacherId)).filter(Boolean))
       ).join(' / ');
       const sectionLabel = Array.from(
         new Set(group.map((slot) => slot.section?.name).filter(Boolean))
@@ -224,7 +231,7 @@ export function buildTeacherGrid(
         ...Array.from(new Set(group.map((slot) => slot.room?.name).filter(Boolean))),
         ...Array.from(new Set(group.map((slot) => slotTypeLabel(slot)).filter(Boolean))),
       ].filter(Boolean);
-      const cell = makeCell(group[0], sectionLabel, metaParts.join(' | ') || undefined);
+      const cell = makeCell(group[0], sectionLabel, metaParts.join(' | ') || undefined, teacherId);
       return {
         ...cell,
         line1: subjectLabel || cell.line1,

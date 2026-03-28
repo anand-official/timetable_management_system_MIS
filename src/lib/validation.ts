@@ -47,7 +47,7 @@ export const TimetableSlotSchema = z.object({
   isInnovation: z.boolean().optional().default(false),
   isWE: z.boolean().optional().default(false),
   manuallyEdited: z.boolean().optional(),
-  notes: z.string().max(4000).trim().optional(),
+  notes: z.string().max(4000).trim().nullable().optional(),
 });
 
 // ── Export ─────────────────────────────────────────────────────────────────────

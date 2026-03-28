@@ -94,5 +94,19 @@ export async function POST() {
   });
   log.push(`Fixed W.E. periods: ${fix2.count} → 2/week (VI–IX), ${fix1.count} → 1/week (X)`);
 
+  // 4. Fix Ms. Deepa Devi Subedi abbreviation DS2 → DS
+  const dds = await db.teacher.findFirst({ where: { name: 'Ms. Deepa Devi Subedi' } });
+  if (dds && dds.abbreviation !== 'DS') {
+    const conflict = await db.teacher.findFirst({ where: { abbreviation: 'DS' } });
+    if (!conflict) {
+      await db.teacher.update({ where: { id: dds.id }, data: { abbreviation: 'DS' } });
+      log.push(`Updated Ms. Deepa Devi Subedi abbreviation → DS`);
+    } else {
+      log.push(`Abbreviation DS already taken by ${conflict.name}`);
+    }
+  } else {
+    log.push(`Ms. Deepa Devi Subedi abbreviation already DS`);
+  }
+
   return NextResponse.json({ success: true, log });
 }
